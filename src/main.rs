@@ -48,6 +48,7 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    dotenvy::dotenv().ok();
     let cli = Cli::parse();
 
     // Initialize work directory
@@ -69,8 +70,8 @@ async fn main() -> Result<()> {
     let pool = setup_db(&db_url).await?;
     let storage = Arc::new(Storage::new(pool));
     
-    let dropbox_token = env::var("DROPBOX_TOKEN").expect("DROPBOX_TOKEN must be set");
-    let openrouter_key = env::var("OPENROUTER_API_KEY").expect("OPENROUTER_API_KEY must be set");
+    let dropbox_token = get_env_var("DROPBOX_TOKEN")?;
+    let openrouter_key = get_env_var("OPENROUTER_API_KEY")?;
 
     let dropbox: Arc<dyn DropboxClient> = Arc::new(HttpDropboxClient::new(dropbox_token));
     let openrouter: Arc<dyn OpenRouterClient> = Arc::new(HttpOpenRouterClient::new(openrouter_key));
@@ -113,4 +114,19 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn get_env_var(name: &str) -> Result<String> {
+    env::var(name).map_err(|_| {
+        anyhow::anyhow!(
+            "Environment variable {} is not set.\n\n\
+            {}:\n  $env:{} = \"your-token-here\"\n\n\
+            {}:\n  export {}=\"your-token-here\"",
+            name.bold().red(),
+            "PowerShell".cyan().bold(),
+            name,
+            "Bash/Zsh".cyan().bold(),
+            name
+        )
+    })
 }

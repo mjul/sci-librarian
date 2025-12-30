@@ -1769,6 +1769,7 @@ dependencies = [
  "chrono",
  "clap",
  "colored",
+ "dotenvy",
  "futures",
  "indicatif",
  "libsqlite3-sys",

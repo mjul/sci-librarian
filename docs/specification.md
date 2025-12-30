@@ -162,6 +162,7 @@ We use traits for DropboxClient and OpenRouterClient so we can replace them with
 
 This is a modern CLI application with colourful output.
 Since the processing takes some time, we use Indicatif to provide progress bars during the individual steps.
+Fail nicely with a helpful error message showing how to solve the problem rather than just throwing a panic.
 
 ## 5. Technology Stack
 
