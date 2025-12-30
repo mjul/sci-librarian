@@ -13,6 +13,9 @@ pub struct RemotePath(pub String);
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LocalPath(pub PathBuf);
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkDirectory(pub PathBuf);
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::Type)]
 #[sqlx(transparent)]
 pub struct FileHash(pub String);

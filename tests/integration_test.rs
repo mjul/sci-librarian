@@ -1,15 +1,22 @@
 use sci_librarian::clients::{FakeDropboxClient, FakeOpenRouterClient, DropboxEntry, DropboxClient};
-use sci_librarian::models::{DropboxId, RemotePath, FileHash, ArticleMetadata, OneLineSummary};
+use sci_librarian::models::{DropboxId, RemotePath, FileHash, ArticleMetadata, OneLineSummary, WorkDirectory};
 use sci_librarian::storage::Storage;
 use sci_librarian::pipeline::Pipeline;
 use sci_librarian::setup_db;
 use std::sync::Arc;
 use lopdf::dictionary;
+use std::fs;
 
 #[tokio::test]
 async fn test_full_scenario() {
     // 1. Setup
-    let pool = setup_db("sqlite::memory:").await.unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let work_dir = WorkDirectory(temp_dir.path().to_path_buf());
+    fs::create_dir_all(work_dir.0.join("raw")).unwrap();
+
+    let db_path = work_dir.0.join("state.db");
+    let db_url = format!("sqlite:///{}", db_path.to_string_lossy().replace('\\', "/"));
+    let pool = setup_db(&db_url).await.unwrap();
     let storage = Arc::new(Storage::new(pool));
     let mut dropbox = FakeDropboxClient::new();
     let openrouter = FakeOpenRouterClient::new();
@@ -72,7 +79,7 @@ async fn test_full_scenario() {
 
     let dropbox = Arc::new(dropbox);
     let openrouter = Arc::new(openrouter);
-    let pipeline = Pipeline::new(storage.clone(), dropbox.clone(), openrouter.clone());
+    let pipeline = Pipeline::new(storage.clone(), dropbox.clone(), openrouter.clone(), work_dir.clone());
 
     // 2. Sync
     let entries = dropbox.list_folder("/Inbox").await.unwrap();

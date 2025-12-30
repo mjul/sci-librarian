@@ -1,4 +1,4 @@
-use crate::models::{RemotePath, FileStatus, Job, JobResult};
+use crate::models::{RemotePath, FileStatus, Job, JobResult, WorkDirectory};
 use crate::clients::{DropboxClient, OpenRouterClient};
 use crate::storage::Storage;
 use anyhow::Result;
@@ -6,12 +6,14 @@ use tokio::sync::mpsc;
 use std::sync::Arc;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use colored::*;
+use std::fs;
 
 pub struct Pipeline {
     storage: Arc<Storage>,
     dropbox: Arc<dyn DropboxClient>,
     openrouter: Arc<dyn OpenRouterClient>,
     multi_progress: MultiProgress,
+    work_dir: WorkDirectory,
 }
 
 impl Pipeline {
@@ -19,12 +21,14 @@ impl Pipeline {
         storage: Arc<Storage>,
         dropbox: Arc<dyn DropboxClient>,
         openrouter: Arc<dyn OpenRouterClient>,
+        work_dir: WorkDirectory,
     ) -> Self {
         Self {
             storage,
             dropbox,
             openrouter,
             multi_progress: MultiProgress::new(),
+            work_dir,
         }
     }
 
@@ -57,6 +61,7 @@ impl Pipeline {
             let result_tx = result_tx.clone();
             let dropbox = Arc::clone(&self.dropbox);
             let openrouter = Arc::clone(&self.openrouter);
+            let work_dir = self.work_dir.clone();
             
             let pb = self.multi_progress.add(ProgressBar::new_spinner());
             pb.set_style(ProgressStyle::default_spinner()
@@ -69,7 +74,7 @@ impl Pipeline {
                     rx.recv().await
                 } {
                     pb.set_message(format!("Processing {}", job.id.0));
-                    let result = process_file(job, &*dropbox, &*openrouter).await;
+                    let result = process_file(job, &*dropbox, &*openrouter, &work_dir).await;
                     let _ = result_tx.send(result).await;
                 }
                 pb.finish_with_message(format!("Worker {} idle", i));
@@ -114,6 +119,7 @@ async fn process_file(
     job: Job,
     dropbox: &dyn DropboxClient,
     openrouter: &dyn OpenRouterClient,
+    work_dir: &WorkDirectory,
 ) -> JobResult {
     // 1. Download
     let content = match dropbox.download_file(&job.id).await {
@@ -121,19 +127,26 @@ async fn process_file(
         Err(e) => return JobResult::Failure { id: job.id, error: e.to_string() },
     };
 
-    // 2. Extract Text (lopdf)
+    // 2. Save to local raw directory
+    let sanitized_id = job.id.0.replace([':', '/', '\\', ' '], "_");
+    let local_path = work_dir.0.join("raw").join(format!("{}.pdf", sanitized_id));
+    if let Err(e) = fs::write(&local_path, &content) {
+        return JobResult::Failure { id: job.id, error: format!("Failed to save local copy: {}", e) };
+    }
+
+    // 3. Extract Text (lopdf)
     let text = match extract_text(&content) {
         Ok(t) => t,
         Err(e) => return JobResult::Failure { id: job.id, error: e.to_string() },
     };
 
-    // 3. LLM Analysis
+    // 4. LLM Analysis
     let (meta, targets) = match openrouter.query_llm(&text, "rules").await {
         Ok(r) => r,
         Err(e) => return JobResult::Failure { id: job.id, error: e.to_string() },
     };
 
-    // 4. Upload
+    // 5. Upload
     for target in &targets {
         if let Err(e) = dropbox.upload_file(target, content.clone()).await {
             return JobResult::Failure { id: job.id, error: e.to_string() };
