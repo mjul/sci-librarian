@@ -158,6 +158,11 @@ We use traits for DropboxClient and OpenRouterClient so we can replace them with
 - DropboxClient supports the list operation (with cursor) and file upload operation.
 - OpenRouterClient support the LLM query operation.
 
+## 4.5 CLI Principles
+
+This is a modern CLI application with colourful output.
+Since the processing takes some time, we use Indicatif to provide progress bars during the individual steps.
+
 ## 5. Technology Stack
 
 | Component         | Choice                  | Justification                                    |
@@ -174,11 +179,14 @@ We use traits for DropboxClient and OpenRouterClient so we can replace them with
 ## 6. CLI Command Structure
 
 ```bash
-# Standard run: Syncs, processes (4 threads), and re-indexes changed folders
+# Standard run: Syncs, processes (4 threads), and re-indexes changed folders. Runs batches through all steps until all work is done.
 $ sci-librarian run -j 4
 
-# Only download new files
+# Only download new file information
 $ sci-librarian sync
+
+# Only download new files (a batch only)
+$ sci-librarian get-batch --batch-size 5
 
 # Only process downloaded files (useful if offline previously)
 $ sci-librarian process --jobs 8
