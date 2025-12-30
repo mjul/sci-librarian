@@ -193,6 +193,9 @@ $ sci-librarian process --jobs 8
 
 # Force regeneration of index for a specific topic
 $ sci-librarian index --path "/Research/Quantum_Computing"
+
+# Use specific directory for temporary files and app database
+$ sci-librarian run --work-directory tmp
 ```
 
 ## 7. Configuration
