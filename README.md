@@ -8,5 +8,8 @@ It features a concurrent, state-aware architecture that ensures incremental proc
 
 It is a single binary, written in Rust, using SQLite and OpenRouter LLM services for categorisation.
 
+## Features and Implementation
+See [the specification](./docs/specification.md) for details.
+
 ## License
 MIT, see [LICENSE](./LICENSE)
