@@ -52,14 +52,20 @@ async fn main() -> Result<()> {
 
     // Initialize work directory
     fs::create_dir_all(&cli.work_directory)?;
-    let work_dir_abs = fs::canonicalize(&cli.work_directory)?;
+    let work_dir_abs = if cli.work_directory.is_absolute() {
+        cli.work_directory.clone()
+    } else {
+        env::current_dir()?.join(&cli.work_directory)
+    };
     let work_dir = WorkDirectory(work_dir_abs.clone());
-    
+    println!("{}: {}", "Using working directory".cyan().bold(), work_dir_abs.to_string_lossy());
+
     // Ensure raw directory exists
     fs::create_dir_all(work_dir.0.join("raw"))?;
 
     let db_path = work_dir.0.join("state.db");
     let db_url = format!("sqlite:///{}", db_path.to_string_lossy().replace('\\', "/"));
+    println!("{}: {}", "Using SQLite file".cyan().bold(), db_path.to_string_lossy());
     let pool = setup_db(&db_url).await?;
     let storage = Arc::new(Storage::new(pool));
     
