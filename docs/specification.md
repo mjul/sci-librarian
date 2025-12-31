@@ -27,11 +27,11 @@ It features a concurrent, state-aware architecture that ensures incremental proc
 
 ### 3.1. Ingestion (`sync`)
 
-- **Input:** Dropbox `/Inbox` folder.
+- **Input:** Dropbox Inbox folder (default: `/0_inbox`, configurable via `--inbox`).
 - **Concurrency:** Single threaded.
 - **Logic:**
 
-1. List files in `/Inbox` via Dropbox API `list_folder` operation with paging.
+1. List files in the Inbox via Dropbox API `list_folder` operation with paging.
 2. Compare file content hashes against the local `state.db`.
 3. **State Update:** Add new or modified files and their hashes to `state.db`, mark for processing.
 
@@ -197,11 +197,15 @@ $ sci-librarian index --path "/Research/Quantum_Computing"
 
 # Use specific directory for temporary files and app database
 $ sci-librarian run --work-directory tmp
+
+# Use specific Dropbox inbox folder
+$ sci-librarian run --inbox "/MyInbox"
 ```
 
 ## 7. Configuration
 
 - API keys and secrets for Dropbox and Openrouter are given via environment variables. Validate that these exist on program start.
+- Dropbox Inbox path is given by CLI parameter `--inbox` (default: `/0_inbox`).
 - Batch size is given by CLI parameter (default: 10)
 - Rules file is in `rules.yaml`, or specified via `--rules {filename}` parameter.
 

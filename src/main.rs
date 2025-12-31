@@ -4,7 +4,7 @@ use sci_librarian::storage::Storage;
 use sci_librarian::pipeline::Pipeline;
 use sci_librarian::indexing::generate_index;
 use sci_librarian::clients::{HttpDropboxClient, HttpOpenRouterClient, DropboxClient, OpenRouterClient};
-use sci_librarian::models::WorkDirectory;
+use sci_librarian::models::{WorkDirectory, DropboxInbox};
 use anyhow::Result;
 use std::sync::Arc;
 use colored::*;
@@ -18,6 +18,9 @@ use std::fs;
 struct Cli {
     #[arg(short, long, global = true, default_value = "working")]
     work_directory: PathBuf,
+
+    #[arg(short, long, global = true, default_value = "/0_inbox")]
+    inbox: String,
 
     #[command(subcommand)]
     command: Commands,
@@ -61,6 +64,9 @@ async fn main() -> Result<()> {
     let work_dir = WorkDirectory(work_dir_abs.clone());
     println!("{}: {}", "Using working directory".cyan().bold(), work_dir_abs.to_string_lossy());
 
+    let inbox = DropboxInbox(cli.inbox.clone());
+    println!("{}: {}", "Using Dropbox inbox".cyan().bold(), inbox.0);
+
     // Ensure raw directory exists
     fs::create_dir_all(work_dir.0.join("raw"))?;
 
@@ -82,7 +88,7 @@ async fn main() -> Result<()> {
             
             // 1. Sync
             println!("Syncing from Dropbox...");
-            let entries = dropbox.list_folder("/Inbox").await?;
+            let entries = dropbox.list_folder(&inbox.0).await?;
             for entry in entries {
                 storage.upsert_file(&entry.id, &entry.content_hash).await?;
             }
@@ -95,7 +101,7 @@ async fn main() -> Result<()> {
         }
         Commands::Sync => {
             println!("Syncing from Dropbox...");
-            let entries = dropbox.list_folder("/Inbox").await?;
+            let entries = dropbox.list_folder(&inbox.0).await?;
             for entry in entries {
                 storage.upsert_file(&entry.id, &entry.content_hash).await?;
             }

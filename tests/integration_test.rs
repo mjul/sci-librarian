@@ -59,7 +59,7 @@ async fn test_full_scenario() {
     doc.save_to(&mut paper_content).unwrap();
 
     let paper_id = DropboxId("id:123".to_string());
-    let paper_path = RemotePath("/Inbox/paper.pdf".to_string());
+    let paper_path = RemotePath("/0_inbox/paper.pdf".to_string());
     let paper_hash = FileHash("hash123".to_string());
 
     dropbox.add_entry(DropboxEntry {
@@ -82,7 +82,7 @@ async fn test_full_scenario() {
     let pipeline = Pipeline::new(storage.clone(), dropbox.clone(), openrouter.clone(), work_dir.clone());
 
     // 2. Sync
-    let entries = dropbox.list_folder("/Inbox").await.unwrap();
+    let entries = dropbox.list_folder("/0_inbox").await.unwrap();
     for entry in entries {
         storage.upsert_file(&entry.id, &entry.content_hash).await.unwrap();
     }
