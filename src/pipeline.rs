@@ -1,5 +1,5 @@
 use crate::clients::{DropboxClient, LlmClient};
-use crate::models::{FileStatus, Job, JobResult, RemotePath, WorkDirectory};
+use crate::models::{FileStatus, Job, JobResult, RemotePath, Rules, WorkDirectory};
 use crate::storage::Storage;
 use anyhow::Result;
 use colored::*;
@@ -165,7 +165,7 @@ async fn process_file(
     };
 
     // 4. LLM Analysis
-    let (meta, targets) = match llm.query_llm(&text, "rules").await {
+    let (meta, targets) = match llm.query_llm(&text, &Rules("rules".to_string())).await {
         Ok(r) => r,
         Err(e) => {
             return JobResult::Failure {

@@ -28,6 +28,9 @@ pub struct FileHash(pub String);
 pub struct OneLineSummary(pub String);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Rules(pub String);
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArticleMetadata {
     pub title: String,
     pub authors: Vec<String>,

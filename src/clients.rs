@@ -1,4 +1,4 @@
-use crate::models::{ArticleMetadata, DropboxId, FileHash, OneLineSummary, RemotePath};
+use crate::models::{ArticleMetadata, DropboxId, FileHash, OneLineSummary, RemotePath, Rules};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -25,7 +25,7 @@ pub trait LlmClient: Send + Sync {
     async fn query_llm(
         &self,
         text: &str,
-        rules: &str,
+        rules: &Rules,
     ) -> Result<(ArticleMetadata, Vec<RemotePath>)>;
 }
 
@@ -238,7 +238,7 @@ impl LlmClient for MistralHttpClient {
     async fn query_llm(
         &self,
         text: &str,
-        rules: &str,
+        rules: &Rules,
     ) -> Result<(ArticleMetadata, Vec<RemotePath>)> {
         let url = "https://api.mistral.ai/v1/chat/completions";
 
@@ -255,7 +255,7 @@ impl LlmClient for MistralHttpClient {
             </text>\n\n\
             Respond ONLY with JSON in this format, where targets are from any matching rules: \
             {{\"title\": \"...\", \"authors\": [\"...\"], \"summary\": \"...\", \"abstract\": \"...\", \"targets\": [\"...\",\"...\"]}}",
-            rules, text
+            rules.0, text
         );
 
         let body = serde_json::json!({
@@ -382,7 +382,7 @@ impl LlmClient for FakeMistralClient {
     async fn query_llm(
         &self,
         text: &str,
-        _rules: &str,
+        _rules: &Rules,
     ) -> Result<(ArticleMetadata, Vec<RemotePath>)> {
         let responses = self.responses.lock().await;
         for (snippet, response) in responses.iter() {
