@@ -256,6 +256,8 @@ impl OpenRouterClient for OpenRouterHttpClient {
             "response_format": { "type": "json_object" }
         });
 
+        debug!("OpenRouter prompt: {}", prompt);
+
         let res = self
             .client
             .post(url)
@@ -270,6 +272,8 @@ impl OpenRouterClient for OpenRouterHttpClient {
         let content = res["choices"][0]["message"]["content"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Invalid LLM response"))?;
+
+        debug!("OpenRouter response content: {}", content);
 
         let parsed: serde_json::Value = serde_json::from_str(content)?;
 
