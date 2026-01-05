@@ -40,6 +40,30 @@ impl HttpDropboxClient {
             client: reqwest::Client::new(),
         }
     }
+
+    fn append_entries(&self, entries: &mut Vec<DropboxEntry>, res: &serde_json::Value) {
+        if let Some(list) = res["entries"].as_array() {
+            for item in list {
+                if item[".tag"] == "file" {
+                    entries.push(DropboxEntry {
+                        id: DropboxId(item["id"].as_str().unwrap_or_default().to_string()),
+                        path: RemotePath(
+                            item["path_display"]
+                                .as_str()
+                                .unwrap_or_default()
+                                .to_string(),
+                        ),
+                        content_hash: FileHash(
+                            item["content_hash"]
+                                .as_str()
+                                .unwrap_or_default()
+                                .to_string(),
+                        ),
+                    });
+                }
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -75,34 +99,50 @@ impl DropboxClient for HttpDropboxClient {
             ));
         }
 
-        let res = res_raw
+        let mut res = res_raw
             .json::<serde_json::Value>()
             .await
             .with_context(|| format!("Failed to parse JSON response from {}", url))?;
 
-        let mut entries = Vec::new();
-        if let Some(list) = res["entries"].as_array() {
-            for item in list {
-                if item[".tag"] == "file" {
-                    entries.push(DropboxEntry {
-                        id: DropboxId(item["id"].as_str().unwrap_or_default().to_string()),
-                        path: RemotePath(
-                            item["path_display"]
-                                .as_str()
-                                .unwrap_or_default()
-                                .to_string(),
-                        ),
-                        content_hash: FileHash(
-                            item["content_hash"]
-                                .as_str()
-                                .unwrap_or_default()
-                                .to_string(),
-                        ),
-                    });
-                }
+        let mut all_entries = Vec::new();
+        self.append_entries(&mut all_entries, &res);
+
+        while res["has_more"].as_bool().unwrap_or(false) {
+            let cursor = res["cursor"].as_str().ok_or_else(|| {
+                anyhow::anyhow!("Missing cursor in Dropbox response despite has_more=true")
+            })?;
+
+            let continue_url = "https://api.dropboxapi.com/2/files/list_folder/continue";
+            let continue_body = serde_json::json!({ "cursor": cursor });
+
+            let continue_res_raw = self
+                .client
+                .post(continue_url)
+                .bearer_auth(&self.token)
+                .json(&continue_body)
+                .send()
+                .await
+                .with_context(|| format!("Failed to send request to {}", continue_url))?;
+
+            let continue_status = continue_res_raw.status();
+            if !continue_status.is_success() {
+                let error_text = continue_res_raw.text().await.unwrap_or_default();
+                return Err(anyhow::anyhow!(
+                    "Dropbox API error ({}): {}",
+                    continue_status,
+                    error_text
+                ));
             }
+
+            res = continue_res_raw
+                .json::<serde_json::Value>()
+                .await
+                .with_context(|| format!("Failed to parse JSON response from {}", continue_url))?;
+
+            self.append_entries(&mut all_entries, &res);
         }
-        Ok(entries)
+
+        Ok(all_entries)
     }
 
     async fn download_file(&self, id: &DropboxId) -> Result<Vec<u8>> {
