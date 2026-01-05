@@ -65,13 +65,20 @@ impl DropboxClient for HttpDropboxClient {
             .await
             .with_context(|| format!("Failed to send request to {}", url))?;
 
-        let status = res_raw.status().clone();
-        let res = res_raw.json::<serde_json::Value>().await.with_context(|| {
-            format!(
-                "HTTP request failed with status code {}, url: {}",
-                status, url
-            )
-        })?;
+        let status = res_raw.status();
+        if !status.is_success() {
+            let error_text = res_raw.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!(
+                "Dropbox API error ({}): {}",
+                status,
+                error_text
+            ));
+        }
+
+        let res = res_raw
+            .json::<serde_json::Value>()
+            .await
+            .with_context(|| format!("Failed to parse JSON response from {}", url))?;
 
         let mut entries = Vec::new();
         if let Some(list) = res["entries"].as_array() {

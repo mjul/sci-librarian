@@ -147,12 +147,13 @@ async fn execute_sync(
     storage: &Arc<Storage>,
     dropbox: &Arc<dyn DropboxClient>,
 ) -> Result<(), Error> {
-    println!("Syncing from Dropbox...");
+    println!("Syncing from Dropbox folder: '{}'...", inbox.0);
     let entries = dropbox.list_folder(&inbox.0).await?;
+    let count = entries.len();
     for entry in entries {
         storage.upsert_file(&entry.id, &entry.content_hash).await?;
     }
-    println!("{}", "Sync complete.".green());
+    println!("{}: Found {} files.", "Sync complete".green(), count);
     Ok(())
 }
 
