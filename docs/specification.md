@@ -5,7 +5,7 @@
 | **Version**      | 1.0 (Draft)                                      |
 | **Date**         | December 30, 2025                                |
 | **Status**       | Approved for Development                         |
-| **Tech Stack**   | Rust (Pure), SQLite, Dropbox API, OpenRouter LLM |
+| **Tech Stack**   | Rust (Pure), SQLite, Dropbox API, Mistral AI LLM |
 
 ## 1. Executive Summary
 
@@ -153,10 +153,10 @@ CREATE INDEX idx_folder ON files(target_path);
 
 ## 4.4 Testability
 
-We use traits for DropboxClient and OpenRouterClient so we can replace them with Fakes for local, offline testing.
+We use traits for DropboxClient and LlmClient so we can replace them with Fakes for local, offline testing.
 
 - DropboxClient supports the list operation (with cursor) and file upload operation.
-- OpenRouterClient support the LLM query operation.
+- LlmClient support the LLM query operation.
 
 ## 4.5 CLI Principles
 
@@ -204,7 +204,7 @@ $ sci-librarian run --inbox "/MyInbox"
 
 ## 7. Configuration
 
-- API keys and secrets for Dropbox and Openrouter are given via environment variables. Validate that these exist on program start.
+- API keys and secrets for Dropbox and Mistral AI are given via environment variables. Validate that these exist on program start.
 - Dropbox Inbox path is given by CLI parameter `--inbox` (default: `/0_inbox`).
 - Batch size is given by CLI parameter (default: 10)
 - Rules file is in `rules.yaml`, or specified via `--rules {filename}` parameter.
@@ -212,16 +212,16 @@ $ sci-librarian run --inbox "/MyInbox"
 ## 8. Testing
 
 - Add unit tests where applicable. Unit tests do not touch the network or file system.
-- Add integration tests. This is the outer test loop driving the implementation. These are allowed to use the local file system (set up a temp directory for each test). They are allowed to use the OpenRouter. They are not allowed to write to external systems, so they must use a Fake for Dropbox that just OKs write operations.
+- Add integration tests. This is the outer test loop driving the implementation. These are allowed to use the local file system (set up a temp directory for each test). They are allowed to use the Mistral AI. They are not allowed to write to external systems, so they must use a Fake for Dropbox that just OKs write operations.
   - test each CLI step individually
-  - add an full scenario sync to indexing scenarios with a Fake DropboxClient instance that returns a given list of new files and accepts all uploads with OK, and a Fake OpenRouter client instance.
-  - add the same full scenario, with the real OpenRouter instance and the Fake DropboxClient instance to verify OpenRouter integration.
+  - add an full scenario sync to indexing scenarios with a Fake DropboxClient instance that returns a given list of new files and accepts all uploads with OK, and a Fake Mistral AI client instance.
+  - add the same full scenario, with the real Mistral AI instance and the Fake DropboxClient instance to verify Mistral AI integration.
 - Since Dropbox operations are potentially destructive, we will not provide Dropbox API tokens to the automated tests. Use a Fake DropboxClient only.
 
 ## 9. Development Roadmap
 
 1. **Phase 1: Foundation.** Setup `clap`, `config`, and Dropbox `sync` (list \& download). Setup SQLite migrations.
-2. **Phase 2: The Pipeline.** Implement `lopdf` extraction and the OpenRouter client. Create the `Job` / `Result` message structures.
+2. **Phase 2: The Pipeline.** Implement `lopdf` extraction and the Mistral AI client. Create the `Job` / `Result` message structures.
 3. **Phase 3: The Actor.** Implement the Collector loop and `indicatif` integration. Wire up the parallel workers.
 4. **Phase 4: Indexing.** Implement the `README.md` generator and upload logic.
 5. **Phase 5: Refinement.** Add retry logic for network flakes and robust error reporting.

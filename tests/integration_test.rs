@@ -1,6 +1,6 @@
 use lopdf::dictionary;
 use sci_librarian::clients::{
-    DropboxClient, DropboxEntry, FakeDropboxClient, FakeOpenRouterClient,
+    DropboxClient, DropboxEntry, FakeDropboxClient, FakeMistralClient,
 };
 use sci_librarian::models::{
     ArticleMetadata, DropboxId, FileHash, OneLineSummary, RemotePath, WorkDirectory,
@@ -23,7 +23,7 @@ async fn test_full_scenario() {
     let pool = setup_db(&db_url).await.unwrap();
     let storage = Arc::new(Storage::new(pool));
     let mut dropbox = FakeDropboxClient::new();
-    let openrouter = FakeOpenRouterClient::new();
+    let llm = FakeMistralClient::new();
 
     // Create a valid PDF using lopdf
     let mut doc = lopdf::Document::with_version("1.4");
@@ -87,16 +87,16 @@ async fn test_full_scenario() {
     let target_paths = vec![RemotePath(
         "/Research/Quantum_Computing/paper.pdf".to_string(),
     )];
-    openrouter
+    llm
         .set_response("Quantum Computing", meta.clone(), target_paths.clone())
         .await;
 
     let dropbox = Arc::new(dropbox);
-    let openrouter = Arc::new(openrouter);
+    let llm = Arc::new(llm);
     let pipeline = Pipeline::new(
         storage.clone(),
         dropbox.clone(),
-        openrouter.clone(),
+        llm.clone(),
         work_dir.clone(),
     );
 

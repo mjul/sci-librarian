@@ -2,7 +2,7 @@ use anyhow::{Error, Result};
 use clap::{Parser, Subcommand};
 use colored::*;
 use sci_librarian::clients::{
-    DropboxClient, DropboxHttpClient, OpenRouterClient, OpenRouterHttpClient,
+    DropboxClient, DropboxHttpClient, LlmClient, MistralHttpClient,
 };
 use sci_librarian::indexing::generate_index;
 use sci_librarian::models::{DropboxInbox, WorkDirectory};
@@ -94,23 +94,23 @@ async fn main() -> Result<()> {
     let storage = Arc::new(Storage::new(pool));
 
     let dropbox_token = get_env_var("DROPBOX_TOKEN")?;
-    let openrouter_key = get_env_var("OPENROUTER_API_KEY")?;
+    let mistral_key = get_env_var("MISTRAL_API_KEY")?;
 
     let dropbox: Arc<dyn DropboxClient> = Arc::new(DropboxHttpClient::new(dropbox_token));
-    let openrouter: Arc<dyn OpenRouterClient> = Arc::new(OpenRouterHttpClient::new(openrouter_key));
+    let llm: Arc<dyn LlmClient> = Arc::new(MistralHttpClient::new(mistral_key));
 
     match cli.command {
         Commands::Run { jobs, batch_size } => {
             info!("{}", "Starting full run...".cyan().bold());
             execute_sync(&inbox, &storage, &dropbox).await?;
-            execute_process(work_dir, &storage, &dropbox, openrouter, jobs).await?;
+            execute_process(work_dir, &storage, &dropbox, llm, jobs).await?;
             info!("{}", "Run complete.".green());
         }
         Commands::Sync => {
             execute_sync(&inbox, &storage, &dropbox).await?;
         }
         Commands::Process { jobs } => {
-            execute_process(work_dir, &storage, &dropbox, openrouter, jobs).await?;
+            execute_process(work_dir, &storage, &dropbox, llm, jobs).await?;
         }
         Commands::Index { path } => {
             execute_index(&storage, dropbox, &path).await?;
@@ -135,14 +135,14 @@ async fn execute_process(
     work_dir: WorkDirectory,
     storage: &Arc<Storage>,
     dropbox: &Arc<dyn DropboxClient>,
-    openrouter: Arc<dyn OpenRouterClient>,
+    llm: Arc<dyn LlmClient>,
     jobs: usize,
 ) -> Result<(), Error> {
     info!("Processing pending files...");
     let pipeline = Pipeline::new(
         storage.clone(),
         dropbox.clone(),
-        openrouter.clone(),
+        llm.clone(),
         work_dir.clone(),
     );
     pipeline.run_batch(10, jobs).await?;

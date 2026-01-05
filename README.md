@@ -6,7 +6,7 @@ classifies papers using LLMs based on semantic rules, and archives them into an 
 
 It features a concurrent, state-aware architecture that ensures incremental processing and robust error handling.
 
-It is a single binary, written in Rust, using SQLite and OpenRouter LLM services for categorisation.
+It is a single binary, written in Rust, using SQLite and Mistral AI LLM services for categorisation.
 
 ## Features and Implementation
 See [the specification](./docs/specification.md) for details.
@@ -23,9 +23,9 @@ Set the `DROPBOX_TOKEN` environment variable to the token value.
 $env:DROPBOX_TOKEN="secret-token"
 ``` 
 
-### OpenRouter API Token
+### Mistral AI API Token
 ```powershell
-$env:OPENROUTER_API_KEY="secret-key"
+$env:MISTRAL_API_KEY="secret-key"
 ``` 
 
 ### Test the Connection

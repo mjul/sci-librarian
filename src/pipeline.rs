@@ -1,4 +1,4 @@
-use crate::clients::{DropboxClient, OpenRouterClient};
+use crate::clients::{DropboxClient, LlmClient};
 use crate::models::{FileStatus, Job, JobResult, RemotePath, WorkDirectory};
 use crate::storage::Storage;
 use anyhow::Result;
@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 pub struct Pipeline {
     storage: Arc<Storage>,
     dropbox: Arc<dyn DropboxClient>,
-    openrouter: Arc<dyn OpenRouterClient>,
+    llm: Arc<dyn LlmClient>,
     multi_progress: MultiProgress,
     work_dir: WorkDirectory,
 }
@@ -20,13 +20,13 @@ impl Pipeline {
     pub fn new(
         storage: Arc<Storage>,
         dropbox: Arc<dyn DropboxClient>,
-        openrouter: Arc<dyn OpenRouterClient>,
+        llm: Arc<dyn LlmClient>,
         work_dir: WorkDirectory,
     ) -> Self {
         Self {
             storage,
             dropbox,
-            openrouter,
+            llm,
             multi_progress: MultiProgress::new(),
             work_dir,
         }
@@ -60,7 +60,7 @@ impl Pipeline {
             let job_rx = Arc::clone(&job_rx);
             let result_tx = result_tx.clone();
             let dropbox = Arc::clone(&self.dropbox);
-            let openrouter = Arc::clone(&self.openrouter);
+            let llm = Arc::clone(&self.llm);
             let work_dir = self.work_dir.clone();
 
             let pb = self.multi_progress.add(ProgressBar::new_spinner());
@@ -76,7 +76,7 @@ impl Pipeline {
                     rx.recv().await
                 } {
                     pb.set_message(format!("Processing {}", job.id.0));
-                    let result = process_file(job, &*dropbox, &*openrouter, &work_dir).await;
+                    let result = process_file(job, &*dropbox, &*llm, &work_dir).await;
                     let _ = result_tx.send(result).await;
                 }
                 pb.finish_with_message(format!("Worker {} idle", i));
@@ -129,7 +129,7 @@ impl Pipeline {
 async fn process_file(
     job: Job,
     dropbox: &dyn DropboxClient,
-    openrouter: &dyn OpenRouterClient,
+    llm: &dyn LlmClient,
     work_dir: &WorkDirectory,
 ) -> JobResult {
     // 1. Download
@@ -165,7 +165,7 @@ async fn process_file(
     };
 
     // 4. LLM Analysis
-    let (meta, targets) = match openrouter.query_llm(&text, "rules").await {
+    let (meta, targets) = match llm.query_llm(&text, "rules").await {
         Ok(r) => r,
         Err(e) => {
             return JobResult::Failure {

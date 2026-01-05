@@ -21,7 +21,7 @@ pub trait DropboxClient: Send + Sync {
 }
 
 #[async_trait]
-pub trait OpenRouterClient: Send + Sync {
+pub trait LlmClient: Send + Sync {
     async fn query_llm(
         &self,
         text: &str,
@@ -209,12 +209,12 @@ impl DropboxClient for DropboxHttpClient {
     }
 }
 
-pub struct OpenRouterHttpClient {
+pub struct MistralHttpClient {
     api_key: String,
     client: reqwest::Client,
 }
 
-impl OpenRouterHttpClient {
+impl MistralHttpClient {
     pub fn new(api_key: String) -> Self {
         Self {
             api_key,
@@ -224,13 +224,13 @@ impl OpenRouterHttpClient {
 }
 
 #[async_trait]
-impl OpenRouterClient for OpenRouterHttpClient {
+impl LlmClient for MistralHttpClient {
     async fn query_llm(
         &self,
         text: &str,
         rules: &str,
     ) -> Result<(ArticleMetadata, Vec<RemotePath>)> {
-        let url = "https://openrouter.ai/api/v1/chat/completions";
+        let url = "https://api.mistral.ai/v1/chat/completions";
 
         let prompt = format!(
             "Extract Title, Authors, Abstract from the following scientific paper text. \
@@ -249,14 +249,14 @@ impl OpenRouterClient for OpenRouterHttpClient {
         );
 
         let body = serde_json::json!({
-            "model": "google/gemini-flash-1.5",
+            "model": "mistral-small-latest",
             "messages": [
                 { "role": "user", "content": prompt }
             ],
             "response_format": { "type": "json_object" }
         });
 
-        debug!("OpenRouter prompt: {}", prompt);
+        debug!("Mistral prompt: {}", prompt);
 
         let res = self
             .client
@@ -273,7 +273,7 @@ impl OpenRouterClient for OpenRouterHttpClient {
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Invalid LLM response"))?;
 
-        debug!("OpenRouter response content: {}", content);
+        debug!("Mistral response content: {}", content);
 
         let parsed: serde_json::Value = serde_json::from_str(content)?;
 
@@ -345,11 +345,11 @@ impl DropboxClient for FakeDropboxClient {
     }
 }
 
-pub struct FakeOpenRouterClient {
+pub struct FakeMistralClient {
     pub responses: Arc<Mutex<HashMap<String, (ArticleMetadata, Vec<RemotePath>)>>>,
 }
 
-impl FakeOpenRouterClient {
+impl FakeMistralClient {
     pub fn new() -> Self {
         Self {
             responses: Arc::new(Mutex::new(HashMap::new())),
@@ -368,7 +368,7 @@ impl FakeOpenRouterClient {
 }
 
 #[async_trait]
-impl OpenRouterClient for FakeOpenRouterClient {
+impl LlmClient for FakeMistralClient {
     async fn query_llm(
         &self,
         text: &str,
