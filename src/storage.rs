@@ -12,21 +12,23 @@ impl Storage {
         Self { pool }
     }
 
-    pub async fn upsert_file(&self, id: &DropboxId, hash: &FileHash) -> Result<()> {
+    pub async fn upsert_file(&self, id: &DropboxId, file_name: &str, hash: &FileHash) -> Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO files (dropbox_id, content_hash, status, updated_at)
-            VALUES (?1, ?2, ?3, ?4)
+            INSERT INTO files (dropbox_id, file_name, content_hash, status, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5)
             ON CONFLICT(dropbox_id) DO UPDATE SET
+                file_name = excluded.file_name,
                 content_hash = excluded.content_hash,
                 status = CASE 
-                    WHEN files.content_hash != excluded.content_hash THEN ?3
+                    WHEN files.content_hash != excluded.content_hash THEN ?4
                     ELSE files.status
                 END,
                 updated_at = excluded.updated_at
             "#,
         )
         .bind(&id.0)
+        .bind(file_name)
         .bind(&hash.0)
         .bind(FileStatus::Pending)
         .bind(Utc::now())
@@ -40,6 +42,7 @@ impl Storage {
             r#"
             SELECT 
                 dropbox_id,
+                file_name,
                 content_hash,
                 status,
                 title,
@@ -75,6 +78,7 @@ impl Storage {
             r#"
             SELECT 
                 dropbox_id,
+                file_name,
                 content_hash,
                 status,
                 title,

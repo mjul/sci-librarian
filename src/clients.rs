@@ -9,6 +9,7 @@ use tracing::debug;
 #[derive(Debug, Clone)]
 pub struct DropboxEntry {
     pub id: DropboxId,
+    pub name: String,
     pub path: RemotePath,
     pub content_hash: FileHash,
 }
@@ -95,6 +96,7 @@ impl DropboxHttpClient {
                 if item[".tag"] == "file" {
                     entries.push(DropboxEntry {
                         id: DropboxId(item["id"].as_str().unwrap_or_default().to_string()),
+                        name: item["name"].as_str().unwrap_or_default().to_string(),
                         path: RemotePath(
                             item["path_display"]
                                 .as_str()

@@ -179,7 +179,7 @@ async fn execute_sync(
     let entries = dropbox.list_folder(&inbox.0).await?;
     let count = entries.len();
     for entry in entries {
-        storage.upsert_file(&entry.id, &entry.content_hash).await?;
+        storage.upsert_file(&entry.id, &entry.name, &entry.content_hash).await?;
     }
     info!("{}: Found {} files.", "Sync complete".green(), count);
     Ok(())

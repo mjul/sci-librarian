@@ -69,6 +69,7 @@ async fn test_full_scenario() {
         .add_entry(
             DropboxEntry {
                 id: paper_id.clone(),
+                name: "paper.pdf".to_string(),
                 path: paper_path.clone(),
                 content_hash: paper_hash.clone(),
             },
@@ -114,10 +115,15 @@ async fn test_full_scenario() {
     let entries = dropbox.list_folder("/0_inbox").await.unwrap();
     for entry in entries {
         storage
-            .upsert_file(&entry.id, &entry.content_hash)
+            .upsert_file(&entry.id, &entry.name, &entry.content_hash)
             .await
             .unwrap();
     }
+
+    // Verify file name is stored
+    let pending = storage.get_pending_files(10).await.unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].file_name.as_deref(), Some("paper.pdf"));
 
     // 3. Run Pipeline
     pipeline.run_batch(10, 1).await.unwrap();

@@ -49,6 +49,7 @@ pub enum FileStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct FileRecord {
     pub dropbox_id: DropboxId,
+    pub file_name: Option<String>,
     pub content_hash: FileHash,
     pub status: FileStatus,
     pub title: Option<String>,
