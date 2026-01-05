@@ -1,6 +1,7 @@
 use crate::models::{ArticleMetadata, DropboxId, FileHash, OneLineSummary, RemotePath};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use tracing::debug;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -55,7 +56,7 @@ impl HttpDropboxClient {
         api_arg: Option<&str>,
         content_type: Option<&str>,
     ) -> Result<reqwest::Response> {
-        println!("Sending POST request to Dropbox API: {}", url);
+        debug!("Sending POST request to Dropbox API: {}", url);
         let mut request = self.client.post(url).bearer_auth(&self.token);
 
         if let Some(arg) = api_arg {

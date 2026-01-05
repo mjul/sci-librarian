@@ -13,6 +13,8 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tracing::info;
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Parser)]
 #[command(name = "sci-librarian")]
@@ -53,6 +55,11 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::from_default_env())
+        .init();
+
     dotenvy::dotenv().ok();
     let cli = Cli::parse();
 
@@ -64,21 +71,21 @@ async fn main() -> Result<()> {
         env::current_dir()?.join(&cli.work_directory)
     };
     let work_dir = WorkDirectory(work_dir_abs.clone());
-    println!(
+    info!(
         "{}: {}",
         "Using working directory".cyan().bold(),
         work_dir_abs.to_string_lossy()
     );
 
     let inbox = DropboxInbox(cli.inbox.clone());
-    println!("{}: {}", "Using Dropbox inbox".cyan().bold(), inbox.0);
+    info!("{}: {}", "Using Dropbox inbox".cyan().bold(), inbox.0);
 
     // Ensure raw directory exists
     fs::create_dir_all(work_dir.0.join("raw"))?;
 
     let db_path = work_dir.0.join("state.db");
     let db_url = format!("sqlite:///{}", db_path.to_string_lossy().replace('\\', "/"));
-    println!(
+    info!(
         "{}: {}",
         "Using SQLite file".cyan().bold(),
         db_path.to_string_lossy()
@@ -94,10 +101,10 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Run { jobs, batch_size } => {
-            println!("{}", "Starting full run...".cyan().bold());
+            info!("{}", "Starting full run...".cyan().bold());
             execute_sync(&inbox, &storage, &dropbox).await?;
             execute_process(work_dir, &storage, &dropbox, openrouter, jobs).await?;
-            println!("{}", "Run complete.".green());
+            info!("{}", "Run complete.".green());
         }
         Commands::Sync => {
             execute_sync(&inbox, &storage, &dropbox).await?;
@@ -118,9 +125,9 @@ async fn execute_index(
     dropbox: Arc<dyn DropboxClient>,
     path: &String,
 ) -> Result<(), Error> {
-    println!("Indexing {}...", path);
+    info!("Indexing {}...", path);
     generate_index(&storage, &*dropbox, &path).await?;
-    println!("{}", "Indexing complete.".green());
+    info!("{}", "Indexing complete.".green());
     Ok(())
 }
 
@@ -131,7 +138,7 @@ async fn execute_process(
     openrouter: Arc<dyn OpenRouterClient>,
     jobs: usize,
 ) -> Result<(), Error> {
-    println!("Processing pending files...");
+    info!("Processing pending files...");
     let pipeline = Pipeline::new(
         storage.clone(),
         dropbox.clone(),
@@ -147,13 +154,13 @@ async fn execute_sync(
     storage: &Arc<Storage>,
     dropbox: &Arc<dyn DropboxClient>,
 ) -> Result<(), Error> {
-    println!("Syncing from Dropbox folder: '{}'...", inbox.0);
+    info!("Syncing from Dropbox folder: '{}'...", inbox.0);
     let entries = dropbox.list_folder(&inbox.0).await?;
     let count = entries.len();
     for entry in entries {
         storage.upsert_file(&entry.id, &entry.content_hash).await?;
     }
-    println!("{}: Found {} files.", "Sync complete".green(), count);
+    info!("{}: Found {} files.", "Sync complete".green(), count);
     Ok(())
 }
 
