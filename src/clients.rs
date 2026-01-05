@@ -1,7 +1,6 @@
 use crate::models::{ArticleMetadata, DropboxId, FileHash, OneLineSummary, RemotePath};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -40,20 +39,38 @@ const DROPBOX_HTTP_TIMEOUT_IN_SECONDS: u64 = 3;
 impl HttpDropboxClient {
     pub fn new(token: String) -> Self {
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(DROPBOX_HTTP_TIMEOUT_IN_SECONDS))
+            .timeout(std::time::Duration::from_secs(
+                DROPBOX_HTTP_TIMEOUT_IN_SECONDS,
+            ))
             .build()
             .unwrap();
-        Self { token,  client }
+        Self { token, client }
     }
 
-    /// Send a POST request to Dropbox API and parse the JSON result. Includes error handling.
-    async fn dropbox_post_request(&self, url: &str, body: &Value) -> Result<Value> {
+    /// Send a POST request to Dropbox API.
+    async fn dropbox_post_request(
+        &self,
+        url: &str,
+        body: Option<Vec<u8>>,
+        api_arg: Option<&str>,
+        content_type: Option<&str>,
+    ) -> Result<reqwest::Response> {
         println!("Sending POST request to Dropbox API: {}", url);
-        let res_raw = self
-            .client
-            .post(url)
-            .bearer_auth(&self.token)
-            .json(&body)
+        let mut request = self.client.post(url).bearer_auth(&self.token);
+
+        if let Some(arg) = api_arg {
+            request = request.header("Dropbox-API-Arg", arg);
+        }
+
+        if let Some(ct) = content_type {
+            request = request.header("Content-Type", ct);
+        }
+
+        if let Some(b) = body {
+            request = request.body(b);
+        }
+
+        let res_raw = request
             .send()
             .await
             .with_context(|| format!("Failed to send request to {}", url))?;
@@ -68,12 +85,7 @@ impl HttpDropboxClient {
             ));
         }
 
-        let res = res_raw
-            .json::<serde_json::Value>()
-            .await
-            .with_context(|| format!("Failed to parse JSON response from {}", url))?;
-
-        Ok(res)
+        Ok(res_raw)
     }
 
     fn append_entries(&self, entries: &mut Vec<DropboxEntry>, res: &serde_json::Value) {
@@ -115,28 +127,46 @@ impl DropboxClient for HttpDropboxClient {
             "include_non_downloadable_files": true
         });
 
-        let res = self
-            .dropbox_post_request(url, &body)
+        let body_bytes = serde_json::to_vec(&body)?;
+        let res_raw = self
+            .dropbox_post_request(url, Some(body_bytes), None, Some("application/json"))
             .await
             .with_context(|| format!("Failed to list folder at {}", path))?;
+
+        let res: serde_json::Value = res_raw
+            .json()
+            .await
+            .with_context(|| format!("Failed to parse JSON response from {}", url))?;
 
         let mut all_entries = Vec::new();
         self.append_entries(&mut all_entries, &res);
 
-        while res["has_more"].as_bool().unwrap_or(false) {
-            let cursor = res["cursor"].as_str().ok_or_else(|| {
+        let mut current_res = res;
+        while current_res["has_more"].as_bool().unwrap_or(false) {
+            let cursor = current_res["cursor"].as_str().ok_or_else(|| {
                 anyhow::anyhow!("Missing cursor in Dropbox response despite has_more=true")
             })?;
 
             let continue_url = "https://api.dropboxapi.com/2/files/list_folder/continue";
             let continue_body = serde_json::json!({ "cursor": cursor });
+            let continue_body_bytes = serde_json::to_vec(&continue_body)?;
 
-            let res = self
-                .dropbox_post_request(url, &body)
+            let res_raw = self
+                .dropbox_post_request(
+                    continue_url,
+                    Some(continue_body_bytes),
+                    None,
+                    Some("application/json"),
+                )
                 .await
                 .with_context(|| format!("Failed to list folder continuation at {}", path))?;
 
-            self.append_entries(&mut all_entries, &res);
+            current_res = res_raw
+                .json()
+                .await
+                .with_context(|| format!("Failed to parse JSON response from {}", continue_url))?;
+
+            self.append_entries(&mut all_entries, &current_res);
         }
 
         Ok(all_entries)
@@ -146,20 +176,12 @@ impl DropboxClient for HttpDropboxClient {
         let url = "https://content.dropboxapi.com/2/files/download";
         let arg = serde_json::json!({ "path": id.0 }).to_string();
 
-        let res = self
-            .client
-            .post(url)
-            .bearer_auth(&self.token)
-            .header("Dropbox-API-Arg", arg)
-            .send()
+        let res_raw = self
+            .dropbox_post_request(url, None, Some(&arg), None)
             .await
-            .with_context(|| format!("Failed to send request to {}", url))?;
+            .with_context(|| format!("Failed to download file {}", id.0))?;
 
-        if !res.status().is_success() {
-            return Err(anyhow::anyhow!("Download failed: {}", res.status()));
-        }
-
-        Ok(res.bytes().await?.to_vec())
+        Ok(res_raw.bytes().await?.to_vec())
     }
 
     async fn upload_file(&self, path: &RemotePath, content: Vec<u8>) -> Result<()> {
@@ -173,20 +195,14 @@ impl DropboxClient for HttpDropboxClient {
         })
         .to_string();
 
-        let res = self
-            .client
-            .post(url)
-            .bearer_auth(&self.token)
-            .header("Dropbox-API-Arg", arg)
-            .header("Content-Type", "application/octet-stream")
-            .body(content)
-            .send()
-            .await
-            .with_context(|| format!("Failed to send request to {}", url))?;
-
-        if !res.status().is_success() {
-            return Err(anyhow::anyhow!("Upload failed: {}", res.status()));
-        }
+        self.dropbox_post_request(
+            url,
+            Some(content),
+            Some(&arg),
+            Some("application/octet-stream"),
+        )
+        .await
+        .with_context(|| format!("Failed to upload file to {}", path.0))?;
 
         Ok(())
     }
