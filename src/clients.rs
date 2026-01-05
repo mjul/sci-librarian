@@ -235,8 +235,14 @@ impl OpenRouterClient for HttpOpenRouterClient {
         let prompt = format!(
             "Extract Title, Authors, Abstract from the following scientific paper text. \
             Provide a 1-line summary. \
-            Match the abstract against these rules to select target paths: {}\n\n\
-            Text:\n{}\n\n\
+            Match the abstract against these rules to select target paths: \n\n\
+            <rules>\n\
+            {}\
+            </rules>\n\n\
+            Text:\n\n\
+            <text>\
+            {}\
+            </text>\n\n\
             Respond ONLY with JSON in this format: \
             {{\"title\": \"...\", \"authors\": [\"...\"], \"summary\": \"...\", \"abstract\": \"...\", \"targets\": [\"/Path/To/Folder/filename.pdf\"]}}",
             rules, text
