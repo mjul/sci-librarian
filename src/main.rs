@@ -1,16 +1,18 @@
+use anyhow::{Error, Result};
 use clap::{Parser, Subcommand};
+use colored::*;
+use sci_librarian::clients::{
+    DropboxClient, HttpDropboxClient, HttpOpenRouterClient, OpenRouterClient,
+};
+use sci_librarian::indexing::generate_index;
+use sci_librarian::models::{DropboxInbox, WorkDirectory};
+use sci_librarian::pipeline::Pipeline;
 use sci_librarian::setup_db;
 use sci_librarian::storage::Storage;
-use sci_librarian::pipeline::Pipeline;
-use sci_librarian::indexing::generate_index;
-use sci_librarian::clients::{HttpDropboxClient, HttpOpenRouterClient, DropboxClient, OpenRouterClient};
-use sci_librarian::models::{WorkDirectory, DropboxInbox};
-use anyhow::Result;
-use std::sync::Arc;
-use colored::*;
 use std::env;
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(name = "sci-librarian")]
@@ -62,7 +64,11 @@ async fn main() -> Result<()> {
         env::current_dir()?.join(&cli.work_directory)
     };
     let work_dir = WorkDirectory(work_dir_abs.clone());
-    println!("{}: {}", "Using working directory".cyan().bold(), work_dir_abs.to_string_lossy());
+    println!(
+        "{}: {}",
+        "Using working directory".cyan().bold(),
+        work_dir_abs.to_string_lossy()
+    );
 
     let inbox = DropboxInbox(cli.inbox.clone());
     println!("{}: {}", "Using Dropbox inbox".cyan().bold(), inbox.0);
@@ -72,10 +78,14 @@ async fn main() -> Result<()> {
 
     let db_path = work_dir.0.join("state.db");
     let db_url = format!("sqlite:///{}", db_path.to_string_lossy().replace('\\', "/"));
-    println!("{}: {}", "Using SQLite file".cyan().bold(), db_path.to_string_lossy());
+    println!(
+        "{}: {}",
+        "Using SQLite file".cyan().bold(),
+        db_path.to_string_lossy()
+    );
     let pool = setup_db(&db_url).await?;
     let storage = Arc::new(Storage::new(pool));
-    
+
     let dropbox_token = get_env_var("DROPBOX_TOKEN")?;
     let openrouter_key = get_env_var("OPENROUTER_API_KEY")?;
 
@@ -85,40 +95,64 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Run { jobs, batch_size } => {
             println!("{}", "Starting full run...".cyan().bold());
-            
-            // 1. Sync
-            println!("Syncing from Dropbox...");
-            let entries = dropbox.list_folder(&inbox.0).await?;
-            for entry in entries {
-                storage.upsert_file(&entry.id, &entry.content_hash).await?;
-            }
-
-            // 2. Process
-            let pipeline = Pipeline::new(storage.clone(), dropbox.clone(), openrouter.clone(), work_dir.clone());
-            pipeline.run_batch(batch_size, jobs).await?;
-            
+            execute_sync(&inbox, &storage, &dropbox).await?;
+            execute_process(work_dir, &storage, &dropbox, openrouter, jobs).await?;
             println!("{}", "Run complete.".green());
         }
         Commands::Sync => {
-            println!("Syncing from Dropbox...");
-            let entries = dropbox.list_folder(&inbox.0).await?;
-            for entry in entries {
-                storage.upsert_file(&entry.id, &entry.content_hash).await?;
-            }
-            println!("{}", "Sync complete.".green());
+            execute_sync(&inbox, &storage, &dropbox).await?;
         }
         Commands::Process { jobs } => {
-            println!("Processing pending files...");
-            let pipeline = Pipeline::new(storage.clone(), dropbox.clone(), openrouter.clone(), work_dir.clone());
-            pipeline.run_batch(10, jobs).await?;
+            execute_process(work_dir, &storage, &dropbox, openrouter, jobs).await?;
         }
         Commands::Index { path } => {
-            println!("Indexing {}...", path);
-            generate_index(&storage, &*dropbox, &path).await?;
-            println!("{}", "Indexing complete.".green());
+            execute_index(&storage, dropbox, &path).await?;
         }
     }
 
+    Ok(())
+}
+
+async fn execute_index(
+    storage: &Arc<Storage>,
+    dropbox: Arc<dyn DropboxClient>,
+    path: &String,
+) -> Result<(), Error> {
+    println!("Indexing {}...", path);
+    generate_index(&storage, &*dropbox, &path).await?;
+    println!("{}", "Indexing complete.".green());
+    Ok(())
+}
+
+async fn execute_process(
+    work_dir: WorkDirectory,
+    storage: &Arc<Storage>,
+    dropbox: &Arc<dyn DropboxClient>,
+    openrouter: Arc<dyn OpenRouterClient>,
+    jobs: usize,
+) -> Result<(), Error> {
+    println!("Processing pending files...");
+    let pipeline = Pipeline::new(
+        storage.clone(),
+        dropbox.clone(),
+        openrouter.clone(),
+        work_dir.clone(),
+    );
+    pipeline.run_batch(10, jobs).await?;
+    Ok(())
+}
+
+async fn execute_sync(
+    inbox: &DropboxInbox,
+    storage: &Arc<Storage>,
+    dropbox: &Arc<dyn DropboxClient>,
+) -> Result<(), Error> {
+    println!("Syncing from Dropbox...");
+    let entries = dropbox.list_folder(&inbox.0).await?;
+    for entry in entries {
+        storage.upsert_file(&entry.id, &entry.content_hash).await?;
+    }
+    println!("{}", "Sync complete.".green());
     Ok(())
 }
 
