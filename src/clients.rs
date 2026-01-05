@@ -114,6 +114,8 @@ impl DropboxHttpClient {
     }
 }
 
+const DROPBOX_ALLOWED_UPLOAD_PREFIX: &'static str = "/dev-sci-librarian/";
+
 #[async_trait]
 impl DropboxClient for DropboxHttpClient {
     async fn list_folder(&self, path: &str) -> Result<Vec<DropboxEntry>> {
@@ -186,6 +188,14 @@ impl DropboxClient for DropboxHttpClient {
     }
 
     async fn upload_file(&self, path: &RemotePath, content: Vec<u8>) -> Result<()> {
+        // Check allowed paths, for extra safety (hard-coded for now)
+        if !path.0.starts_with(DROPBOX_ALLOWED_UPLOAD_PREFIX) {
+            return Err(anyhow::anyhow!(format!(
+                "Upload path not allowed to path: {} (allowed prefix: {})",
+                path.0, DROPBOX_ALLOWED_UPLOAD_PREFIX
+            )));
+        }
+
         let url = "https://content.dropboxapi.com/2/files/upload";
         let arg = serde_json::json!({
             "path": path.0,
@@ -243,8 +253,8 @@ impl LlmClient for MistralHttpClient {
             <text>\
             {}\
             </text>\n\n\
-            Respond ONLY with JSON in this format: \
-            {{\"title\": \"...\", \"authors\": [\"...\"], \"summary\": \"...\", \"abstract\": \"...\", \"targets\": [\"/Path/To/Folder/filename.pdf\"]}}",
+            Respond ONLY with JSON in this format, where targets are from any matching rules: \
+            {{\"title\": \"...\", \"authors\": [\"...\"], \"summary\": \"...\", \"abstract\": \"...\", \"targets\": [\"...\",\"...\"]}}",
             rules, text
         );
 
