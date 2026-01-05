@@ -1,12 +1,12 @@
-use crate::models::{RemotePath, FileStatus, Job, JobResult, WorkDirectory};
 use crate::clients::{DropboxClient, OpenRouterClient};
+use crate::models::{FileStatus, Job, JobResult, RemotePath, WorkDirectory};
 use crate::storage::Storage;
 use anyhow::Result;
-use tokio::sync::mpsc;
-use std::sync::Arc;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use colored::*;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::fs;
+use std::sync::Arc;
+use tokio::sync::mpsc;
 
 pub struct Pipeline {
     storage: Arc<Storage>,
@@ -62,10 +62,12 @@ impl Pipeline {
             let dropbox = Arc::clone(&self.dropbox);
             let openrouter = Arc::clone(&self.openrouter);
             let work_dir = self.work_dir.clone();
-            
+
             let pb = self.multi_progress.add(ProgressBar::new_spinner());
-            pb.set_style(ProgressStyle::default_spinner()
-                .template("{spinner:.green} [{elapsed_precise}] {msg}")?);
+            pb.set_style(
+                ProgressStyle::default_spinner()
+                    .template("{spinner:.green} [{elapsed_precise}] {msg}")?,
+            );
             pb.set_message(format!("Worker {}", i));
 
             let handle = tokio::spawn(async move {
@@ -85,16 +87,25 @@ impl Pipeline {
 
         // 3. Collector: Listen for results and update DB/UI
         let main_pb = self.multi_progress.add(ProgressBar::new(batch_size as u64));
-        main_pb.set_style(ProgressStyle::default_bar()
-            .template("{span:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} {msg}")?);
+        main_pb.set_style(
+            ProgressStyle::default_bar().template(
+                "{span:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} {msg}",
+            )?,
+        );
         main_pb.set_message("Overall Progress");
 
         while let Some(result) = result_rx.recv().await {
             match result {
-                JobResult::Success { id, meta: _, target_paths: _ } => {
+                JobResult::Success {
+                    id,
+                    meta: _,
+                    target_paths: _,
+                } => {
                     // Update DB with metadata and status
                     // For now, just update status
-                    self.storage.update_status(&id, FileStatus::Processed).await?;
+                    self.storage
+                        .update_status(&id, FileStatus::Processed)
+                        .await?;
                     main_pb.println(format!("{} Processed {}", "✔".green(), id.0));
                 }
                 JobResult::Failure { id, error } => {
@@ -108,7 +119,7 @@ impl Pipeline {
         for handle in worker_handles {
             let _ = handle.await;
         }
-        
+
         main_pb.finish_with_message("Batch complete");
 
         Ok(())
@@ -124,62 +135,98 @@ async fn process_file(
     // 1. Download
     let content = match dropbox.download_file(&job.id).await {
         Ok(c) => c,
-        Err(e) => return JobResult::Failure { id: job.id, error: e.to_string() },
+        Err(e) => {
+            return JobResult::Failure {
+                id: job.id,
+                error: e.to_string(),
+            };
+        }
     };
 
     // 2. Save to local raw directory
     let sanitized_id = job.id.0.replace([':', '/', '\\', ' '], "_");
     let local_path = work_dir.0.join("raw").join(format!("{}.pdf", sanitized_id));
     if let Err(e) = fs::write(&local_path, &content) {
-        return JobResult::Failure { id: job.id, error: format!("Failed to save local copy: {}", e) };
+        return JobResult::Failure {
+            id: job.id,
+            error: format!("Failed to save local copy: {}", e),
+        };
     }
 
     // 3. Extract Text (lopdf)
     let text = match extract_text(&content) {
         Ok(t) => t,
-        Err(e) => return JobResult::Failure { id: job.id, error: e.to_string() },
+        Err(e) => {
+            return JobResult::Failure {
+                id: job.id,
+                error: e.to_string(),
+            };
+        }
     };
 
     // 4. LLM Analysis
     let (meta, targets) = match openrouter.query_llm(&text, "rules").await {
         Ok(r) => r,
-        Err(e) => return JobResult::Failure { id: job.id, error: e.to_string() },
+        Err(e) => {
+            return JobResult::Failure {
+                id: job.id,
+                error: e.to_string(),
+            };
+        }
     };
 
     // 5. Upload
     for target in &targets {
         if let Err(e) = dropbox.upload_file(target, content.clone()).await {
-            return JobResult::Failure { id: job.id, error: e.to_string() };
+            return JobResult::Failure {
+                id: job.id,
+                error: e.to_string(),
+            };
         }
         let sidecar_path = RemotePath(format!("{}.md", target.0));
-        let sidecar_content = format!("# {}\n\nAuthors: {}\n\nSummary: {}\n\nAbstract: {}", 
-            meta.title, meta.authors.join(", "), meta.summary.0, meta.abstract_text);
-        if let Err(e) = dropbox.upload_file(&sidecar_path, sidecar_content.into_bytes()).await {
-            return JobResult::Failure { id: job.id, error: e.to_string() };
+        let sidecar_content = format!(
+            "# {}\n\nAuthors: {}\n\nSummary: {}\n\nAbstract: {}",
+            meta.title,
+            meta.authors.join(", "),
+            meta.summary.0,
+            meta.abstract_text
+        );
+        if let Err(e) = dropbox
+            .upload_file(&sidecar_path, sidecar_content.into_bytes())
+            .await
+        {
+            return JobResult::Failure {
+                id: job.id,
+                error: e.to_string(),
+            };
         }
     }
 
-    JobResult::Success { id: job.id, meta, target_paths: targets }
+    JobResult::Success {
+        id: job.id,
+        meta,
+        target_paths: targets,
+    }
 }
 
 fn extract_text(content: &[u8]) -> Result<String> {
     let doc = lopdf::Document::load_mem(content)?;
     let mut text = String::new();
-    
+
     // Extract from first 5 pages as per PRD
     let pages = doc.get_pages();
     let max_pages = std::cmp::min(pages.len(), 5);
-    
+
     for i in 1..=max_pages {
         if let Ok(page_text) = doc.extract_text(&[i as u32]) {
             text.push_str(&page_text);
             text.push('\n');
         }
     }
-    
+
     if text.trim().is_empty() {
         return Err(anyhow::anyhow!("No text extracted from PDF"));
     }
-    
+
     Ok(text)
 }

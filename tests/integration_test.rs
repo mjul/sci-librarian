@@ -1,11 +1,15 @@
-use sci_librarian::clients::{FakeDropboxClient, FakeOpenRouterClient, DropboxEntry, DropboxClient};
-use sci_librarian::models::{DropboxId, RemotePath, FileHash, ArticleMetadata, OneLineSummary, WorkDirectory};
-use sci_librarian::storage::Storage;
+use lopdf::dictionary;
+use sci_librarian::clients::{
+    DropboxClient, DropboxEntry, FakeDropboxClient, FakeOpenRouterClient,
+};
+use sci_librarian::models::{
+    ArticleMetadata, DropboxId, FileHash, OneLineSummary, RemotePath, WorkDirectory,
+};
 use sci_librarian::pipeline::Pipeline;
 use sci_librarian::setup_db;
-use std::sync::Arc;
-use lopdf::dictionary;
+use sci_librarian::storage::Storage;
 use std::fs;
+use std::sync::Arc;
 
 #[tokio::test]
 async fn test_full_scenario() {
@@ -48,13 +52,14 @@ async fn test_full_scenario() {
         "Kids" => vec![page_id.into()],
         "Count" => 1,
     };
-    doc.objects.insert(pages_id, lopdf::Object::Dictionary(pages));
+    doc.objects
+        .insert(pages_id, lopdf::Object::Dictionary(pages));
     let catalog_id = doc.add_object(dictionary! {
         "Type" => "Catalog",
         "Pages" => pages_id,
     });
     doc.trailer.set("Root", catalog_id);
-    
+
     let mut paper_content = Vec::new();
     doc.save_to(&mut paper_content).unwrap();
 
@@ -62,11 +67,16 @@ async fn test_full_scenario() {
     let paper_path = RemotePath("/0_inbox/paper.pdf".to_string());
     let paper_hash = FileHash("hash123".to_string());
 
-    dropbox.add_entry(DropboxEntry {
-        id: paper_id.clone(),
-        path: paper_path.clone(),
-        content_hash: paper_hash.clone(),
-    }, paper_content.clone()).await;
+    dropbox
+        .add_entry(
+            DropboxEntry {
+                id: paper_id.clone(),
+                path: paper_path.clone(),
+                content_hash: paper_hash.clone(),
+            },
+            paper_content.clone(),
+        )
+        .await;
 
     let meta = ArticleMetadata {
         title: "Quantum Computing for Dummies".to_string(),
@@ -74,17 +84,29 @@ async fn test_full_scenario() {
         summary: OneLineSummary("A beginner's guide to quantum computing.".to_string()),
         abstract_text: "This paper explains quantum computing in simple terms.".to_string(),
     };
-    let target_paths = vec![RemotePath("/Research/Quantum_Computing/paper.pdf".to_string())];
-    openrouter.set_response("Quantum Computing", meta.clone(), target_paths.clone()).await;
+    let target_paths = vec![RemotePath(
+        "/Research/Quantum_Computing/paper.pdf".to_string(),
+    )];
+    openrouter
+        .set_response("Quantum Computing", meta.clone(), target_paths.clone())
+        .await;
 
     let dropbox = Arc::new(dropbox);
     let openrouter = Arc::new(openrouter);
-    let pipeline = Pipeline::new(storage.clone(), dropbox.clone(), openrouter.clone(), work_dir.clone());
+    let pipeline = Pipeline::new(
+        storage.clone(),
+        dropbox.clone(),
+        openrouter.clone(),
+        work_dir.clone(),
+    );
 
     // 2. Sync
     let entries = dropbox.list_folder("/0_inbox").await.unwrap();
     for entry in entries {
-        storage.upsert_file(&entry.id, &entry.content_hash).await.unwrap();
+        storage
+            .upsert_file(&entry.id, &entry.content_hash)
+            .await
+            .unwrap();
     }
 
     // 3. Run Pipeline
@@ -94,7 +116,13 @@ async fn test_full_scenario() {
     let files = dropbox.files.lock().await;
     assert!(files.contains_key("/Research/Quantum_Computing/paper.pdf"));
     assert!(files.contains_key("/Research/Quantum_Computing/paper.pdf.md"));
-    
-    let sidecar = String::from_utf8(files.get("/Research/Quantum_Computing/paper.pdf.md").unwrap().clone()).unwrap();
+
+    let sidecar = String::from_utf8(
+        files
+            .get("/Research/Quantum_Computing/paper.pdf.md")
+            .unwrap()
+            .clone(),
+    )
+    .unwrap();
     assert!(sidecar.contains("Quantum Computing for Dummies"));
 }

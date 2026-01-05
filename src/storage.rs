@@ -1,7 +1,7 @@
-use sqlx::SqlitePool;
+use crate::models::{DropboxId, FileHash, FileRecord, FileStatus};
 use anyhow::Result;
-use crate::models::{FileRecord, DropboxId, FileHash, FileStatus};
 use chrono::Utc;
+use sqlx::SqlitePool;
 
 pub struct Storage {
     pool: SqlitePool,
@@ -61,14 +61,12 @@ impl Storage {
     }
 
     pub async fn update_status(&self, id: &DropboxId, status: FileStatus) -> Result<()> {
-        sqlx::query(
-            "UPDATE files SET status = ?1, updated_at = ?2 WHERE dropbox_id = ?3",
-        )
-        .bind(status)
-        .bind(Utc::now())
-        .bind(&id.0)
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("UPDATE files SET status = ?1, updated_at = ?2 WHERE dropbox_id = ?3")
+            .bind(status)
+            .bind(Utc::now())
+            .bind(&id.0)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
