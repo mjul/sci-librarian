@@ -28,9 +28,6 @@ pub struct FileHash(pub String);
 pub struct OneLineSummary(pub String);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Rules(pub String);
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArticleMetadata {
     pub title: String,
     pub authors: Vec<String>,
@@ -77,4 +74,21 @@ pub enum JobResult {
         id: DropboxId,
         error: String,
     },
+}
+
+/** This is a struct representing a rule for categorizing files. */
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Rule {
+    pub description: String,
+    pub target: String,
+}
+
+/** This is a struct representing all the rules for categorizing files. */
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Rules(pub(crate) Vec<Rule>);
+
+impl From<Vec<Rule>> for Rules {
+    fn from(rules: Vec<Rule>) -> Self {
+        Rules(rules)
+    }
 }

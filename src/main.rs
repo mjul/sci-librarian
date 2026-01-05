@@ -1,11 +1,9 @@
 use anyhow::{Error, Result};
 use clap::{Parser, Subcommand};
 use colored::*;
-use sci_librarian::clients::{
-    DropboxClient, DropboxHttpClient, LlmClient, MistralHttpClient,
-};
+use sci_librarian::clients::{DropboxClient, DropboxHttpClient, LlmClient, MistralHttpClient};
 use sci_librarian::indexing::generate_index;
-use sci_librarian::models::{DropboxInbox, WorkDirectory};
+use sci_librarian::models::{DropboxInbox, Rule, Rules, WorkDirectory};
 use sci_librarian::pipeline::Pipeline;
 use sci_librarian::setup_db;
 use sci_librarian::storage::Storage;
@@ -30,21 +28,26 @@ struct Cli {
     command: Commands,
 }
 
+const DEFAULT_JOBS: usize = 4;
+const DEFAULT_BATCH_SIZE: i64 = 10;
+
 #[derive(Subcommand)]
 enum Commands {
     /// Sync, process, and index
     Run {
-        #[arg(short, long, default_value_t = 4)]
+        #[arg(short, long, default_value_t = DEFAULT_JOBS)]
         jobs: usize,
-        #[arg(short, long, default_value_t = 10)]
+        #[arg(short, long, default_value_t = DEFAULT_BATCH_SIZE)]
         batch_size: i64,
     },
     /// Only sync new files from Dropbox
     Sync,
     /// Only process downloaded files
     Process {
-        #[arg(short, long, default_value_t = 4)]
+        #[arg(short, long, default_value_t = DEFAULT_JOBS)]
         jobs: usize,
+        #[arg(short, long, default_value_t = DEFAULT_BATCH_SIZE)]
+        batch_size: i64,
     },
     /// Force regeneration of index for a path
     Index {
@@ -99,18 +102,20 @@ async fn main() -> Result<()> {
     let dropbox: Arc<dyn DropboxClient> = Arc::new(DropboxHttpClient::new(dropbox_token));
     let llm: Arc<dyn LlmClient> = Arc::new(MistralHttpClient::new(mistral_key));
 
+    let rules = Arc::new(get_rules());
+
     match cli.command {
         Commands::Run { jobs, batch_size } => {
             info!("{}", "Starting full run...".cyan().bold());
             execute_sync(&inbox, &storage, &dropbox).await?;
-            execute_process(work_dir, &storage, &dropbox, llm, jobs).await?;
+            execute_process(rules, work_dir, &storage, &dropbox, llm, jobs, batch_size).await?;
             info!("{}", "Run complete.".green());
         }
         Commands::Sync => {
             execute_sync(&inbox, &storage, &dropbox).await?;
         }
-        Commands::Process { jobs } => {
-            execute_process(work_dir, &storage, &dropbox, llm, jobs).await?;
+        Commands::Process { jobs , batch_size} => {
+            execute_process(rules, work_dir, &storage, &dropbox, llm, jobs, batch_size).await?;
         }
         Commands::Index { path } => {
             execute_index(&storage, dropbox, &path).await?;
@@ -118,6 +123,19 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn get_rules() -> Rules {
+    Rules::from(vec![
+        Rule {
+            description: String::from("Neural Networks, Deep Learning, Large Language Models (LLMs), Reinforcement Learning and other large-scale text, image and video processing tasks using function approximators"),
+            target: String::from("/dev-sci-librarian/ai")
+        },
+        Rule {
+            description: String::from("Programming language theory, parsers, compilers, partial evaluation, type systems etc."),
+            target: String::from("/dev-sci-librarian/databases")
+        }
+    ])
 }
 
 async fn execute_index(
@@ -132,11 +150,13 @@ async fn execute_index(
 }
 
 async fn execute_process(
+    rules: Arc<Rules>,
     work_dir: WorkDirectory,
     storage: &Arc<Storage>,
     dropbox: &Arc<dyn DropboxClient>,
     llm: Arc<dyn LlmClient>,
     jobs: usize,
+    batch_size: i64,
 ) -> Result<(), Error> {
     info!("Processing pending files...");
     let pipeline = Pipeline::new(
@@ -144,8 +164,9 @@ async fn execute_process(
         dropbox.clone(),
         llm.clone(),
         work_dir.clone(),
+        rules.clone(),
     );
-    pipeline.run_batch(10, jobs).await?;
+    pipeline.run_batch(batch_size, jobs).await?;
     Ok(())
 }
 

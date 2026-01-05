@@ -14,6 +14,7 @@ pub struct Pipeline {
     llm: Arc<dyn LlmClient>,
     multi_progress: MultiProgress,
     work_dir: WorkDirectory,
+    rules: Arc<Rules>,
 }
 
 impl Pipeline {
@@ -22,6 +23,7 @@ impl Pipeline {
         dropbox: Arc<dyn DropboxClient>,
         llm: Arc<dyn LlmClient>,
         work_dir: WorkDirectory,
+        rules: Arc<Rules>,
     ) -> Self {
         Self {
             storage,
@@ -29,6 +31,7 @@ impl Pipeline {
             llm,
             multi_progress: MultiProgress::new(),
             work_dir,
+            rules,
         }
     }
 
@@ -62,6 +65,7 @@ impl Pipeline {
             let dropbox = Arc::clone(&self.dropbox);
             let llm = Arc::clone(&self.llm);
             let work_dir = self.work_dir.clone();
+            let rules = Arc::clone(&self.rules);
 
             let pb = self.multi_progress.add(ProgressBar::new_spinner());
             pb.set_style(
@@ -76,7 +80,9 @@ impl Pipeline {
                     rx.recv().await
                 } {
                     pb.set_message(format!("Processing {}", job.id.0));
-                    let result = process_file(job, &*dropbox, &*llm, &work_dir).await;
+                    let result =
+                        process_file(job, &*dropbox, &*llm, &work_dir, &rules)
+                            .await;
                     let _ = result_tx.send(result).await;
                 }
                 pb.finish_with_message(format!("Worker {} idle", i));
@@ -131,6 +137,7 @@ async fn process_file(
     dropbox: &dyn DropboxClient,
     llm: &dyn LlmClient,
     work_dir: &WorkDirectory,
+    rules: &Rules,
 ) -> JobResult {
     // 1. Download
     let content = match dropbox.download_file(&job.id).await {
@@ -165,7 +172,7 @@ async fn process_file(
     };
 
     // 4. LLM Analysis
-    let (meta, targets) = match llm.query_llm(&text, &Rules("rules".to_string())).await {
+    let (meta, targets) = match llm.query_llm(&text, &rules).await {
         Ok(r) => r,
         Err(e) => {
             return JobResult::Failure {

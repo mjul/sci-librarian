@@ -242,6 +242,9 @@ impl LlmClient for MistralHttpClient {
     ) -> Result<(ArticleMetadata, Vec<RemotePath>)> {
         let url = "https://api.mistral.ai/v1/chat/completions";
 
+        // Transform the rules to a String:
+        let rules_str = rules.0.iter().map(|rule| format!("Description: {} -> <target>{}</target>", rule.description, rule.target)).collect::<Vec<String>>().join("\n");
+
         let prompt = format!(
             "Extract Title, Authors, Abstract from the following scientific paper text. \
             Provide a 1-line summary. \
@@ -255,7 +258,7 @@ impl LlmClient for MistralHttpClient {
             </text>\n\n\
             Respond ONLY with JSON in this format, where targets are from any matching rules: \
             {{\"title\": \"...\", \"authors\": [\"...\"], \"summary\": \"...\", \"abstract\": \"...\", \"targets\": [\"...\",\"...\"]}}",
-            rules.0, text
+            rules_str, text
         );
 
         let body = serde_json::json!({

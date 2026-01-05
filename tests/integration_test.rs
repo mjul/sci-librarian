@@ -1,13 +1,11 @@
 use lopdf::dictionary;
-use sci_librarian::clients::{
-    DropboxClient, DropboxEntry, FakeDropboxClient, FakeMistralClient,
-};
-use sci_librarian::models::{
-    ArticleMetadata, DropboxId, FileHash, OneLineSummary, RemotePath, WorkDirectory,
-};
+use sci_librarian::clients::{DropboxClient, DropboxEntry, FakeDropboxClient, FakeMistralClient};
+use sci_librarian::models::{ArticleMetadata, DropboxId, FileHash, OneLineSummary, RemotePath, Rule, WorkDirectory};
 use sci_librarian::pipeline::Pipeline;
 use sci_librarian::setup_db;
 use sci_librarian::storage::Storage;
+use sci_librarian::models::Rules;
+
 use std::fs;
 use std::sync::Arc;
 
@@ -87,17 +85,29 @@ async fn test_full_scenario() {
     let target_paths = vec![RemotePath(
         "/Research/Quantum_Computing/paper.pdf".to_string(),
     )];
-    llm
-        .set_response("Quantum Computing", meta.clone(), target_paths.clone())
+    llm.set_response("Quantum Computing", meta.clone(), target_paths.clone())
         .await;
 
     let dropbox = Arc::new(dropbox);
     let llm = Arc::new(llm);
+    let rules = Arc::new(
+        Rules::from(vec![
+            Rule {
+                description: String::from("Neural Networks, Deep Learning, Large Language Models (LLMs), Reinforcement Learning and other large-scale text, image and video processing tasks using function approximators"),
+                target: String::from("/dev-sci-librarian/ai")
+            },
+            Rule {
+                description: String::from("Programming language theory, parsers, compilers, partial evaluation, type systems etc."),
+                target: String::from("/dev-sci-librarian/databases")
+            }
+        ])
+    );
     let pipeline = Pipeline::new(
         storage.clone(),
         dropbox.clone(),
         llm.clone(),
         work_dir.clone(),
+        rules,
     );
 
     // 2. Sync
