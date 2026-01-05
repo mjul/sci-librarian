@@ -1,4 +1,4 @@
-use sci_librarian::clients::{DropboxClient, HttpDropboxClient};
+use sci_librarian::clients::{DropboxClient, DropboxHttpClient};
 use std::env;
 
 fn get_dropbox_token() -> String {
@@ -9,7 +9,7 @@ fn get_dropbox_token() -> String {
 #[tokio::test]
 async fn test_dropbox_list_folder() {
     let token = get_dropbox_token();
-    let client = HttpDropboxClient::new(token);
+    let client = DropboxHttpClient::new(token);
 
     let result = client.list_folder("").await;
 
@@ -25,7 +25,7 @@ async fn test_dropbox_list_folder() {
 #[tokio::test]
 async fn test_dropbox_download_file() {
     let token = get_dropbox_token();
-    let client = HttpDropboxClient::new(token);
+    let client = DropboxHttpClient::new(token);
 
     // First list folder to find a file to download
     let entries = client.list_folder("").await.expect("Failed to list folder");

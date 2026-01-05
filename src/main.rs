@@ -2,7 +2,7 @@ use anyhow::{Error, Result};
 use clap::{Parser, Subcommand};
 use colored::*;
 use sci_librarian::clients::{
-    DropboxClient, HttpDropboxClient, HttpOpenRouterClient, OpenRouterClient,
+    DropboxClient, DropboxHttpClient, OpenRouterClient, OpenRouterHttpClient,
 };
 use sci_librarian::indexing::generate_index;
 use sci_librarian::models::{DropboxInbox, WorkDirectory};
@@ -14,7 +14,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::info;
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 #[derive(Parser)]
 #[command(name = "sci-librarian")]
@@ -96,8 +96,8 @@ async fn main() -> Result<()> {
     let dropbox_token = get_env_var("DROPBOX_TOKEN")?;
     let openrouter_key = get_env_var("OPENROUTER_API_KEY")?;
 
-    let dropbox: Arc<dyn DropboxClient> = Arc::new(HttpDropboxClient::new(dropbox_token));
-    let openrouter: Arc<dyn OpenRouterClient> = Arc::new(HttpOpenRouterClient::new(openrouter_key));
+    let dropbox: Arc<dyn DropboxClient> = Arc::new(DropboxHttpClient::new(dropbox_token));
+    let openrouter: Arc<dyn OpenRouterClient> = Arc::new(OpenRouterHttpClient::new(openrouter_key));
 
     match cli.command {
         Commands::Run { jobs, batch_size } => {

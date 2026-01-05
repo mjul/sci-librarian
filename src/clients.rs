@@ -1,10 +1,10 @@
 use crate::models::{ArticleMetadata, DropboxId, FileHash, OneLineSummary, RemotePath};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use tracing::debug;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tracing::debug;
 
 #[derive(Debug, Clone)]
 pub struct DropboxEntry {
@@ -29,7 +29,7 @@ pub trait OpenRouterClient: Send + Sync {
     ) -> Result<(ArticleMetadata, Vec<RemotePath>)>;
 }
 
-pub struct HttpDropboxClient {
+pub struct DropboxHttpClient {
     token: String,
     client: reqwest::Client,
 }
@@ -37,7 +37,7 @@ pub struct HttpDropboxClient {
 /** Time-out for HTTP requests to the Dropbox API */
 const DROPBOX_HTTP_TIMEOUT_IN_SECONDS: u64 = 3;
 
-impl HttpDropboxClient {
+impl DropboxHttpClient {
     pub fn new(token: String) -> Self {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(
@@ -115,7 +115,7 @@ impl HttpDropboxClient {
 }
 
 #[async_trait]
-impl DropboxClient for HttpDropboxClient {
+impl DropboxClient for DropboxHttpClient {
     async fn list_folder(&self, path: &str) -> Result<Vec<DropboxEntry>> {
         let url = "https://api.dropboxapi.com/2/files/list_folder";
         let body = serde_json::json!({
@@ -209,12 +209,12 @@ impl DropboxClient for HttpDropboxClient {
     }
 }
 
-pub struct HttpOpenRouterClient {
+pub struct OpenRouterHttpClient {
     api_key: String,
     client: reqwest::Client,
 }
 
-impl HttpOpenRouterClient {
+impl OpenRouterHttpClient {
     pub fn new(api_key: String) -> Self {
         Self {
             api_key,
@@ -224,7 +224,7 @@ impl HttpOpenRouterClient {
 }
 
 #[async_trait]
-impl OpenRouterClient for HttpOpenRouterClient {
+impl OpenRouterClient for OpenRouterHttpClient {
     async fn query_llm(
         &self,
         text: &str,
