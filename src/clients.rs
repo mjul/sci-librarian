@@ -155,7 +155,9 @@ impl DropboxClient for HttpDropboxClient {
             .bearer_auth(&self.token)
             .header("Dropbox-API-Arg", arg)
             .send()
-            .await?;
+            .await
+            .with_context(|| format!("Failed to send request to {}", url))?;
+
 
         if !res.status().is_success() {
             return Err(anyhow::anyhow!("Download failed: {}", res.status()));
@@ -183,7 +185,8 @@ impl DropboxClient for HttpDropboxClient {
             .header("Content-Type", "application/octet-stream")
             .body(content)
             .send()
-            .await?;
+            .await
+            .with_context(|| format!("Failed to send request to {}", url))?;
 
         if !res.status().is_success() {
             return Err(anyhow::anyhow!("Upload failed: {}", res.status()));
@@ -240,7 +243,8 @@ impl OpenRouterClient for HttpOpenRouterClient {
             .header("Authorization", format!("Bearer {}", self.api_key))
             .json(&body)
             .send()
-            .await?
+            .await
+            .with_context(|| format!("Failed to send request to {}", url))?
             .json::<serde_json::Value>()
             .await?;
 
