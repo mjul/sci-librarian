@@ -1,6 +1,7 @@
 use crate::models::{ArticleMetadata, DropboxId, FileHash, OneLineSummary, RemotePath};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -33,12 +34,46 @@ pub struct HttpDropboxClient {
     client: reqwest::Client,
 }
 
+/** Time-out for HTTP requests to the Dropbox API */
+const DROPBOX_HTTP_TIMEOUT_IN_SECONDS: u64 = 3;
+
 impl HttpDropboxClient {
     pub fn new(token: String) -> Self {
-        Self {
-            token,
-            client: reqwest::Client::new(),
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(DROPBOX_HTTP_TIMEOUT_IN_SECONDS))
+            .build()
+            .unwrap();
+        Self { token,  client }
+    }
+
+    /// Send a POST request to Dropbox API and parse the JSON result. Includes error handling.
+    async fn dropbox_post_request(&self, url: &str, body: &Value) -> Result<Value> {
+        println!("Sending POST request to Dropbox API: {}", url);
+        let res_raw = self
+            .client
+            .post(url)
+            .bearer_auth(&self.token)
+            .json(&body)
+            .send()
+            .await
+            .with_context(|| format!("Failed to send request to {}", url))?;
+
+        let status = res_raw.status();
+        if !status.is_success() {
+            let error_text = res_raw.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!(
+                "Dropbox API error ({}): {}",
+                status,
+                error_text
+            ));
         }
+
+        let res = res_raw
+            .json::<serde_json::Value>()
+            .await
+            .with_context(|| format!("Failed to parse JSON response from {}", url))?;
+
+        Ok(res)
     }
 
     fn append_entries(&self, entries: &mut Vec<DropboxEntry>, res: &serde_json::Value) {
@@ -80,29 +115,10 @@ impl DropboxClient for HttpDropboxClient {
             "include_non_downloadable_files": true
         });
 
-        let res_raw = self
-            .client
-            .post(url)
-            .bearer_auth(&self.token)
-            .json(&body)
-            .send()
+        let res = self
+            .dropbox_post_request(url, &body)
             .await
-            .with_context(|| format!("Failed to send request to {}", url))?;
-
-        let status = res_raw.status();
-        if !status.is_success() {
-            let error_text = res_raw.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!(
-                "Dropbox API error ({}): {}",
-                status,
-                error_text
-            ));
-        }
-
-        let mut res = res_raw
-            .json::<serde_json::Value>()
-            .await
-            .with_context(|| format!("Failed to parse JSON response from {}", url))?;
+            .with_context(|| format!("Failed to list folder at {}", path))?;
 
         let mut all_entries = Vec::new();
         self.append_entries(&mut all_entries, &res);
@@ -115,29 +131,10 @@ impl DropboxClient for HttpDropboxClient {
             let continue_url = "https://api.dropboxapi.com/2/files/list_folder/continue";
             let continue_body = serde_json::json!({ "cursor": cursor });
 
-            let continue_res_raw = self
-                .client
-                .post(continue_url)
-                .bearer_auth(&self.token)
-                .json(&continue_body)
-                .send()
+            let res = self
+                .dropbox_post_request(url, &body)
                 .await
-                .with_context(|| format!("Failed to send request to {}", continue_url))?;
-
-            let continue_status = continue_res_raw.status();
-            if !continue_status.is_success() {
-                let error_text = continue_res_raw.text().await.unwrap_or_default();
-                return Err(anyhow::anyhow!(
-                    "Dropbox API error ({}): {}",
-                    continue_status,
-                    error_text
-                ));
-            }
-
-            res = continue_res_raw
-                .json::<serde_json::Value>()
-                .await
-                .with_context(|| format!("Failed to parse JSON response from {}", continue_url))?;
+                .with_context(|| format!("Failed to list folder continuation at {}", path))?;
 
             self.append_entries(&mut all_entries, &res);
         }
@@ -157,7 +154,6 @@ impl DropboxClient for HttpDropboxClient {
             .send()
             .await
             .with_context(|| format!("Failed to send request to {}", url))?;
-
 
         if !res.status().is_success() {
             return Err(anyhow::anyhow!("Download failed: {}", res.status()));
