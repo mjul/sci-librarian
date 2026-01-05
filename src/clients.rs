@@ -1,6 +1,6 @@
+use crate::models::{ArticleMetadata, DropboxId, FileHash, OneLineSummary, RemotePath};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
-use anyhow::Result;
-use crate::models::{DropboxId, RemotePath, FileHash, ArticleMetadata, OneLineSummary};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -21,7 +21,11 @@ pub trait DropboxClient: Send + Sync {
 
 #[async_trait]
 pub trait OpenRouterClient: Send + Sync {
-    async fn query_llm(&self, text: &str, rules: &str) -> Result<(ArticleMetadata, Vec<RemotePath>)>;
+    async fn query_llm(
+        &self,
+        text: &str,
+        rules: &str,
+    ) -> Result<(ArticleMetadata, Vec<RemotePath>)>;
 }
 
 pub struct HttpDropboxClient {
@@ -52,13 +56,22 @@ impl DropboxClient for HttpDropboxClient {
             "include_non_downloadable_files": true
         });
 
-        let res = self.client.post(url)
+        let res_raw = self
+            .client
+            .post(url)
             .bearer_auth(&self.token)
             .json(&body)
             .send()
-            .await?
-            .json::<serde_json::Value>()
-            .await?;
+            .await
+            .with_context(|| format!("Failed to send request to {}", url))?;
+
+        let status = res_raw.status().clone();
+        let res = res_raw.json::<serde_json::Value>().await.with_context(|| {
+            format!(
+                "HTTP request failed with status code {}, url: {}",
+                status, url
+            )
+        })?;
 
         let mut entries = Vec::new();
         if let Some(list) = res["entries"].as_array() {
@@ -66,8 +79,18 @@ impl DropboxClient for HttpDropboxClient {
                 if item[".tag"] == "file" {
                     entries.push(DropboxEntry {
                         id: DropboxId(item["id"].as_str().unwrap_or_default().to_string()),
-                        path: RemotePath(item["path_display"].as_str().unwrap_or_default().to_string()),
-                        content_hash: FileHash(item["content_hash"].as_str().unwrap_or_default().to_string()),
+                        path: RemotePath(
+                            item["path_display"]
+                                .as_str()
+                                .unwrap_or_default()
+                                .to_string(),
+                        ),
+                        content_hash: FileHash(
+                            item["content_hash"]
+                                .as_str()
+                                .unwrap_or_default()
+                                .to_string(),
+                        ),
                     });
                 }
             }
@@ -79,7 +102,9 @@ impl DropboxClient for HttpDropboxClient {
         let url = "https://content.dropboxapi.com/2/files/download";
         let arg = serde_json::json!({ "path": id.0 }).to_string();
 
-        let res = self.client.post(url)
+        let res = self
+            .client
+            .post(url)
             .bearer_auth(&self.token)
             .header("Dropbox-API-Arg", arg)
             .send()
@@ -100,9 +125,12 @@ impl DropboxClient for HttpDropboxClient {
             "autorename": true,
             "mute": false,
             "strict_conflict": false
-        }).to_string();
+        })
+        .to_string();
 
-        let res = self.client.post(url)
+        let res = self
+            .client
+            .post(url)
             .bearer_auth(&self.token)
             .header("Dropbox-API-Arg", arg)
             .header("Content-Type", "application/octet-stream")
@@ -134,9 +162,13 @@ impl HttpOpenRouterClient {
 
 #[async_trait]
 impl OpenRouterClient for HttpOpenRouterClient {
-    async fn query_llm(&self, text: &str, rules: &str) -> Result<(ArticleMetadata, Vec<RemotePath>)> {
+    async fn query_llm(
+        &self,
+        text: &str,
+        rules: &str,
+    ) -> Result<(ArticleMetadata, Vec<RemotePath>)> {
         let url = "https://openrouter.ai/api/v1/chat/completions";
-        
+
         let prompt = format!(
             "Extract Title, Authors, Abstract from the following scientific paper text. \
             Provide a 1-line summary. \
@@ -155,7 +187,9 @@ impl OpenRouterClient for HttpOpenRouterClient {
             "response_format": { "type": "json_object" }
         });
 
-        let res = self.client.post(url)
+        let res = self
+            .client
+            .post(url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .json(&body)
             .send()
@@ -163,22 +197,33 @@ impl OpenRouterClient for HttpOpenRouterClient {
             .json::<serde_json::Value>()
             .await?;
 
-        let content = res["choices"][0]["message"]["content"].as_str()
+        let content = res["choices"][0]["message"]["content"]
+            .as_str()
             .ok_or_else(|| anyhow::anyhow!("Invalid LLM response"))?;
-        
+
         let parsed: serde_json::Value = serde_json::from_str(content)?;
-        
+
         let meta = ArticleMetadata {
             title: parsed["title"].as_str().unwrap_or("Unknown").to_string(),
-            authors: parsed["authors"].as_array()
-                .map(|a| a.iter().map(|v| v.as_str().unwrap_or_default().to_string()).collect())
+            authors: parsed["authors"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .map(|v| v.as_str().unwrap_or_default().to_string())
+                        .collect()
+                })
                 .unwrap_or_default(),
             summary: OneLineSummary(parsed["summary"].as_str().unwrap_or_default().to_string()),
             abstract_text: parsed["abstract"].as_str().unwrap_or_default().to_string(),
         };
 
-        let targets = parsed["targets"].as_array()
-            .map(|a| a.iter().map(|v| RemotePath(v.as_str().unwrap_or_default().to_string())).collect())
+        let targets = parsed["targets"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .map(|v| RemotePath(v.as_str().unwrap_or_default().to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
         Ok((meta, targets))
@@ -213,7 +258,10 @@ impl DropboxClient for FakeDropboxClient {
 
     async fn download_file(&self, id: &DropboxId) -> Result<Vec<u8>> {
         let files = self.files.lock().await;
-        files.get(&id.0).cloned().ok_or_else(|| anyhow::anyhow!("File not found"))
+        files
+            .get(&id.0)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("File not found"))
     }
 
     async fn upload_file(&self, path: &RemotePath, content: Vec<u8>) -> Result<()> {
@@ -234,7 +282,12 @@ impl FakeOpenRouterClient {
         }
     }
 
-    pub async fn set_response(&self, text_snippet: &str, meta: ArticleMetadata, targets: Vec<RemotePath>) {
+    pub async fn set_response(
+        &self,
+        text_snippet: &str,
+        meta: ArticleMetadata,
+        targets: Vec<RemotePath>,
+    ) {
         let mut responses = self.responses.lock().await;
         responses.insert(text_snippet.to_string(), (meta, targets));
     }
@@ -242,14 +295,18 @@ impl FakeOpenRouterClient {
 
 #[async_trait]
 impl OpenRouterClient for FakeOpenRouterClient {
-    async fn query_llm(&self, text: &str, _rules: &str) -> Result<(ArticleMetadata, Vec<RemotePath>)> {
+    async fn query_llm(
+        &self,
+        text: &str,
+        _rules: &str,
+    ) -> Result<(ArticleMetadata, Vec<RemotePath>)> {
         let responses = self.responses.lock().await;
         for (snippet, response) in responses.iter() {
             if text.contains(snippet) {
                 return Ok(response.clone());
             }
         }
-        
+
         // Default response if no snippet matches
         Ok((
             ArticleMetadata {
@@ -258,7 +315,7 @@ impl OpenRouterClient for FakeOpenRouterClient {
                 summary: OneLineSummary("A paper about something.".to_string()),
                 abstract_text: "This is a default abstract.".to_string(),
             },
-            vec![RemotePath("/Archive/General".to_string())]
+            vec![RemotePath("/Archive/General".to_string())],
         ))
     }
 }
