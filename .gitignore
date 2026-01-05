@@ -25,7 +25,10 @@ target
 
 /target
 
+# Never commit .env files as they might contain secrets
+.env
 
 # Application working directory
 
 /working
+
