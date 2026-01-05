@@ -28,10 +28,7 @@ async fn test_dropbox_download_file() {
     let client = HttpDropboxClient::new(token);
 
     // First list folder to find a file to download
-    let entries = client
-        .list_folder("/0_inbox")
-        .await
-        .expect("Failed to list folder");
+    let entries = client.list_folder("").await.expect("Failed to list folder");
 
     // Find the first file entry
     // (Assuming DropboxEntry has some way to distinguish files from folders,
@@ -41,19 +38,18 @@ async fn test_dropbox_download_file() {
         "No entries found in /0_inbox folder, cannot download file"
     );
 
-    if let Some(entry) = entries.first() {
-        println!(
-            "Attempting to download file: {} (id: {:?})",
-            entry.path.0, entry.id
-        );
-        let content = client.download_file(&entry.id).await;
+    let entry = entries.first().unwrap();
+    println!(
+        "Attempting to download file: {} (id: {:?})",
+        entry.path.0, entry.id
+    );
+    let content = client.download_file(&entry.id).await;
 
-        // It might fail if it's a folder, but let's see.
-        // Dropbox API download usually works on files.
-        // If it's a folder, we might get an error, which is also a valid test of the client's behavior.
-        match content {
-            Ok(bytes) => println!("Successfully downloaded {} bytes", bytes.len()),
-            Err(e) => println!("Download failed (might be a folder): {:?}", e),
-        }
+    // It might fail if it's a folder, but let's see.
+    // Dropbox API download usually works on files.
+    // If it's a folder, we might get an error, which is also a valid test of the client's behavior.
+    match content {
+        Ok(bytes) => println!("Successfully downloaded {} bytes", bytes.len()),
+        Err(e) => println!("Download failed (might be a folder): {:?}", e),
     }
 }
