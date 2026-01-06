@@ -1,10 +1,11 @@
-use crate::models::{ArticleMetadata, DropboxId, FileHash, OneLineSummary, RemotePath, Rules};
+use crate::models::{
+    ArticleMetadata, DropboxId, FileHash, OneLineSummary, RemotePath, Rule, Rules,
+};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::debug;
 
 #[derive(Debug, Clone)]
 pub struct DropboxEntry {
@@ -23,11 +24,8 @@ pub trait DropboxClient: Send + Sync {
 
 #[async_trait]
 pub trait LlmClient: Send + Sync {
-    async fn query_llm(
-        &self,
-        text: &str,
-        rules: &Rules,
-    ) -> Result<(ArticleMetadata, Vec<RemotePath>)>;
+    /// Query the LLM for metadata and any matching rules for the given text.
+    async fn query_llm(&self, text: &str, rules: &Rules) -> Result<(ArticleMetadata, Vec<Rule>)>;
 }
 
 pub struct DropboxHttpClient {
@@ -64,7 +62,7 @@ impl DropboxHttpClient {
         api_arg: Option<&str>,
         content_type: Option<&str>,
     ) -> Result<reqwest::Response> {
-        debug!("Sending POST request to Dropbox API: {}", url);
+        tracing::debug!("Sending POST request to Dropbox API: {}", url);
         let mut request = self.client.post(url).bearer_auth(&self.token);
 
         if let Some(arg) = api_arg {
@@ -242,11 +240,7 @@ impl MistralHttpClient {
 
 #[async_trait]
 impl LlmClient for MistralHttpClient {
-    async fn query_llm(
-        &self,
-        text: &str,
-        rules: &Rules,
-    ) -> Result<(ArticleMetadata, Vec<RemotePath>)> {
+    async fn query_llm(&self, text: &str, rules: &Rules) -> Result<(ArticleMetadata, Vec<Rule>)> {
         let url = "https://api.mistral.ai/v1/chat/completions";
 
         // Transform the rules to a String:
@@ -288,7 +282,7 @@ impl LlmClient for MistralHttpClient {
             "response_format": { "type": "json_object" }
         });
 
-        debug!("Mistral prompt: {}", prompt);
+        tracing::debug!("Mistral prompt: {}", prompt);
 
         let res = self
             .client
@@ -305,34 +299,81 @@ impl LlmClient for MistralHttpClient {
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Invalid LLM response"))?;
 
-        debug!("Mistral response content: {}", content);
+        tracing::debug!("Mistral response content: {}", content);
 
         let parsed: serde_json::Value = serde_json::from_str(content)?;
 
+        // Verify that the response has the expected keys:
+        let title = parsed["title"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("LLM response has no title"))?;
+        let author_values = parsed["authors"]
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("LLM response has no authors"))?;
+        let summary = parsed["summary"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("LLM response has no summary"))?;
+        let abstract_text = parsed["abstract"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("LLM response has no abstract"))?;
+        let category_values = parsed["categories"]
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("LLM response has no categories"))?;
+
+        // Verify that all authors are strings
+        if !author_values.iter().all(|c| c.is_string()) {
+            return Err(anyhow::anyhow!("LLM response has non-string authors"));
+        }
+        let authors = author_values
+            .iter()
+            .map(|c| c.as_str().unwrap().to_string())
+            .collect::<Vec<String>>();
+
+        // Verify that all categories are strings
+        if !category_values.iter().all(|c| c.is_string()) {
+            return Err(anyhow::anyhow!("LLM response has non-string categories"));
+        }
+        let categories = category_values
+            .iter()
+            .map(|c| c.as_str().unwrap().to_string())
+            .collect::<Vec<String>>();
+
         let meta = ArticleMetadata {
-            title: parsed["title"].as_str().unwrap_or("Unknown").to_string(),
-            authors: parsed["authors"]
-                .as_array()
-                .map(|a| {
-                    a.iter()
-                        .map(|v| v.as_str().unwrap_or_default().to_string())
-                        .collect()
-                })
-                .unwrap_or_default(),
-            summary: OneLineSummary(parsed["summary"].as_str().unwrap_or_default().to_string()),
-            abstract_text: parsed["abstract"].as_str().unwrap_or_default().to_string(),
+            title: String::from(title),
+            authors: authors,
+            summary: OneLineSummary(String::from(summary)),
+            abstract_text: String::from(abstract_text),
         };
 
-        let targets = parsed["targets"]
-            .as_array()
-            .map(|a| {
-                a.iter()
-                    .map(|v| RemotePath(v.as_str().unwrap_or_default().to_string()))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let unique_matching_rule_names = categories.iter().collect::<HashSet<_>>();
+        let rules_by_name = rules
+            .0
+            .iter()
+            .map(|rule: &Rule| (rule.name.clone(), rule))
+            .collect::<HashMap<String, &Rule>>();
+        let (known_matches_rule_names, unknown_matched_rule_names): (Vec<_>, Vec<_>) =
+            unique_matching_rule_names
+                .into_iter()
+                .partition(|name| rules_by_name.contains_key(*name));
+        if !unknown_matched_rule_names.is_empty() {
+            tracing::warn!(
+                "LLM response included unknown rule names: {:?}",
+                unknown_matched_rule_names
+            );
+        }
+        tracing::debug!(
+            "LLM response matched rules: {:?}",
+            &known_matches_rule_names
+        );
+        let matching_rules: Vec<Rule> = known_matches_rule_names
+            .into_iter()
+            .filter_map(|name| rules_by_name.get(name).map(|rule| (*rule).clone()))
+            .collect();
 
-        Ok((meta, targets))
+        tracing::debug!("Extracted metadata: {:#?}", meta);
+        tracing::debug!("Found matching rules: {:#?}", matching_rules);
+
+        Ok((meta, matching_rules))
     }
 }
 
@@ -378,7 +419,7 @@ impl DropboxClient for FakeDropboxClient {
 }
 
 pub struct FakeMistralClient {
-    pub responses: Arc<Mutex<HashMap<String, (ArticleMetadata, Vec<RemotePath>)>>>,
+    pub responses: Arc<Mutex<HashMap<String, (ArticleMetadata, Vec<Rule>)>>>,
 }
 
 impl FakeMistralClient {
@@ -392,20 +433,16 @@ impl FakeMistralClient {
         &self,
         text_snippet: &str,
         meta: ArticleMetadata,
-        targets: Vec<RemotePath>,
+        matching_rules: Vec<Rule>,
     ) {
         let mut responses = self.responses.lock().await;
-        responses.insert(text_snippet.to_string(), (meta, targets));
+        responses.insert(text_snippet.to_string(), (meta, matching_rules));
     }
 }
 
 #[async_trait]
 impl LlmClient for FakeMistralClient {
-    async fn query_llm(
-        &self,
-        text: &str,
-        _rules: &Rules,
-    ) -> Result<(ArticleMetadata, Vec<RemotePath>)> {
+    async fn query_llm(&self, text: &str, _rules: &Rules) -> Result<(ArticleMetadata, Vec<Rule>)> {
         let responses = self.responses.lock().await;
         for (snippet, response) in responses.iter() {
             if text.contains(snippet) {
@@ -421,7 +458,7 @@ impl LlmClient for FakeMistralClient {
                 summary: OneLineSummary("A paper about something.".to_string()),
                 abstract_text: "This is a default abstract.".to_string(),
             },
-            vec![RemotePath("/Archive/General".to_string())],
+            vec![],
         ))
     }
 }

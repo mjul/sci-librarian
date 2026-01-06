@@ -1,10 +1,12 @@
 use lopdf::dictionary;
 use sci_librarian::clients::{DropboxClient, DropboxEntry, FakeDropboxClient, FakeMistralClient};
-use sci_librarian::models::{ArticleMetadata, DropboxId, FileHash, OneLineSummary, RemotePath, Rule, WorkDirectory};
+use sci_librarian::models::Rules;
+use sci_librarian::models::{
+    ArticleMetadata, DropboxId, FileHash, OneLineSummary, RemotePath, Rule, WorkDirectory,
+};
 use sci_librarian::pipeline::Pipeline;
 use sci_librarian::setup_db;
 use sci_librarian::storage::Storage;
-use sci_librarian::models::Rules;
 
 use std::fs;
 use std::sync::Arc;
@@ -83,28 +85,32 @@ async fn test_full_scenario() {
         summary: OneLineSummary("A beginner's guide to quantum computing.".to_string()),
         abstract_text: "This paper explains quantum computing in simple terms.".to_string(),
     };
-    let target_paths = vec![RemotePath(
-        "/Research/Quantum_Computing/paper.pdf".to_string(),
-    )];
-    llm.set_response("Quantum Computing", meta.clone(), target_paths.clone())
+    let matching_rules = vec![Rule {
+        name: String::from("Quantum Computing"),
+        description: String::from("Everything about Quantum Computing"),
+        path: RemotePath::from("/Research/Quantum_Computing"),
+    }];
+    llm.set_response("Quantum", meta.clone(), matching_rules.clone())
         .await;
 
     let dropbox = Arc::new(dropbox);
     let llm = Arc::new(llm);
-    let rules = Arc::new(
-        Rules::from(vec![
-            Rule {
-                name: String::from("AI"),
-                description: String::from("Neural Networks, Deep Learning, Large Language Models (LLMs), Reinforcement Learning and other large-scale text, image and video processing tasks using function approximators"),
-                path: RemotePath::from("/out/ai")
-            },
-            Rule {
-                name: String::from("Programming Languages"),
-                description: String::from("Programming language theory, parsers, compilers, partial evaluation, type systems etc."),
-                path: RemotePath::from("/out/programming-languages")
-            }
-        ])
-    );
+    let rules = Arc::new(Rules::from(vec![
+        Rule {
+            name: String::from("AI"),
+            description: String::from(
+                "Neural Networks, Deep Learning, Large Language Models (LLMs), Reinforcement Learning and other large-scale text, image and video processing tasks using function approximators",
+            ),
+            path: RemotePath::from("/out/ai"),
+        },
+        Rule {
+            name: String::from("Programming Languages"),
+            description: String::from(
+                "Programming language theory, parsers, compilers, partial evaluation, type systems etc.",
+            ),
+            path: RemotePath::from("/out/programming-languages"),
+        },
+    ]));
     let pipeline = Pipeline::new(
         storage.clone(),
         dropbox.clone(),

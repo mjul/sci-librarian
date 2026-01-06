@@ -213,7 +213,7 @@ async fn process_file(
         &job.file_name.clone().unwrap_or_else(|| String::from("")),
         &job.id.0
     );
-    let (meta, targets) = match llm.query_llm(&text, &rules).await {
+    let (meta, matching_rules) = match llm.query_llm(&text, &rules).await {
         Ok(r) => r,
         Err(e) => {
             tracing::warn!("LLM query failed: {}", e);
@@ -231,6 +231,7 @@ async fn process_file(
         &job.file_name.clone().unwrap_or_else(|| String::from("")),
         &job.id.0
     );
+    let targets = matching_rules.iter().map(|x|x.path.clone()).collect::<Vec<RemotePath>>();
     for target in &targets {
         if let Err(e) = dropbox.upload_file(target, content.clone()).await {
             tracing::warn!("Failed to upload file {} to Dropbox: {:?}", target.0, e);
