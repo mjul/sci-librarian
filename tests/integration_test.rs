@@ -1,4 +1,4 @@
-use lopdf::{dictionary, Document};
+use lopdf::{Document, dictionary};
 use sci_librarian::clients::{DropboxClient, DropboxEntry, FakeDropboxClient, FakeMistralClient};
 use sci_librarian::models::Rules;
 use sci_librarian::models::{
@@ -11,7 +11,7 @@ use sci_librarian::storage::Storage;
 use std::fs;
 use std::sync::Arc;
 
-fn create_pdf(content:  &str) -> Document {
+fn create_pdf(content: &str) -> Document {
     let mut doc = lopdf::Document::with_version("1.4");
     let pages_id = doc.new_object_id();
     let font_id = doc.add_object(dictionary! {
@@ -24,7 +24,7 @@ fn create_pdf(content:  &str) -> Document {
             "F1" => font_id,
         },
     });
-    let content_bytes : &[u8] = content.as_bytes();
+    let content_bytes: &[u8] = content.as_bytes();
     let content_id = doc.add_object(lopdf::Stream::new(dictionary! {}, content_bytes.to_vec()));
     let page_id = doc.add_object(dictionary! {
         "Type" => "Page",

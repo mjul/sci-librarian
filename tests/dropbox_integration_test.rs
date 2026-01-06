@@ -22,7 +22,6 @@ async fn test_dropbox_list_folder() {
     println!("Found {} entries in root folder", entries.len());
 }
 
-
 #[tokio::test]
 async fn test_dropbox_download_file() {
     let token = get_dropbox_token();

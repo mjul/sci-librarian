@@ -12,7 +12,12 @@ impl Storage {
         Self { pool }
     }
 
-    pub async fn upsert_file(&self, id: &DropboxId, file_name: &str, hash: &FileHash) -> Result<()> {
+    pub async fn upsert_file(
+        &self,
+        id: &DropboxId,
+        file_name: &str,
+        hash: &FileHash,
+    ) -> Result<()> {
         sqlx::query(
             r#"
             INSERT INTO files (dropbox_id, file_name, content_hash, status, updated_at)
