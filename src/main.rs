@@ -11,7 +11,7 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{info, debug};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Parser)]
@@ -155,9 +155,9 @@ async fn execute_index(
     dropbox: Arc<dyn DropboxClient>,
     path: &String,
 ) -> Result<(), Error> {
-    info!("Indexing {}...", path);
+    println!("Indexing {}...", path);
     generate_index(&storage, &*dropbox, &path).await?;
-    info!("{}", "Indexing complete.".green());
+    println!("{}", "Indexing complete.".green());
     Ok(())
 }
 
@@ -170,7 +170,7 @@ async fn execute_process(
     jobs: usize,
     batch_size: i64,
 ) -> Result<(), Error> {
-    info!("Processing pending files...");
+    println!("Processing pending files...");
     let pipeline = Pipeline::new(
         storage.clone(),
         dropbox.clone(),
@@ -179,6 +179,7 @@ async fn execute_process(
         rules.clone(),
     );
     pipeline.run_batch(batch_size, jobs).await?;
+    println!("Processing completed.");
     Ok(())
 }
 
@@ -187,7 +188,7 @@ async fn execute_sync(
     storage: &Arc<Storage>,
     dropbox: &Arc<dyn DropboxClient>,
 ) -> Result<(), Error> {
-    info!("Syncing from Dropbox folder: '{}'...", inbox.0);
+    println!("Syncing from Dropbox folder: '{}'...", inbox.0);
     let entries = dropbox.list_folder(&inbox.0).await?;
     let count = entries.len();
     for entry in entries {
@@ -195,7 +196,7 @@ async fn execute_sync(
             .upsert_file(&entry.id, &entry.name, &entry.content_hash)
             .await?;
     }
-    info!("{}: Found {} files.", "Sync complete".green(), count);
+    println!("{}: Found {} files.", "Sync complete".green(), count);
     Ok(())
 }
 
