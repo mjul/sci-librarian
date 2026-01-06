@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use colored::*;
 use sci_librarian::clients::{DropboxClient, DropboxHttpClient, LlmClient, MistralHttpClient};
 use sci_librarian::indexing::generate_index;
-use sci_librarian::models::{DropboxInbox, Rule, Rules, WorkDirectory};
+use sci_librarian::models::{DropboxInbox, RemotePath, Rule, Rules, WorkDirectory};
 use sci_librarian::pipeline::Pipeline;
 use sci_librarian::setup_db;
 use sci_librarian::storage::Storage;
@@ -140,16 +140,18 @@ async fn main() -> Result<()> {
 fn get_rules() -> Rules {
     Rules::from(vec![
         Rule {
+            name: String::from("AI"),
             description: String::from(
                 "Neural Networks, Deep Learning, Large Language Models (LLMs), Reinforcement Learning and other large-scale text, image and video processing tasks using function approximators",
             ),
-            target: String::from("/sorted/ai"),
+            path: RemotePath::from("/sorted/ai")
         },
         Rule {
+            name: String::from("Programming Language Theory"),
             description: String::from(
                 "Programming language theory, parsers, compilers, partial evaluation, type systems etc.",
             ),
-            target: String::from("/sorted/databases"),
+            path: RemotePath::from("/sorted/programming-languages"),
         },
     ])
 }

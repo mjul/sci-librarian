@@ -10,6 +10,12 @@ pub struct DropboxId(pub String);
 #[sqlx(transparent)]
 pub struct RemotePath(pub String);
 
+impl From<&str> for RemotePath {
+    fn from(s: &str) -> Self {
+        RemotePath(s.to_string())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LocalPath(pub PathBuf);
 
@@ -80,11 +86,13 @@ pub enum JobResult {
     },
 }
 
-/** This is a struct representing a rule for categorizing files. */
+/// A file categorization rule
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Rule {
+    /// Unique name for the rule
+    pub name: String,
     pub description: String,
-    pub target: String,
+    pub path: RemotePath,
 }
 
 /** This is a struct representing all the rules for categorizing files. */

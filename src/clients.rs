@@ -33,7 +33,7 @@ pub trait LlmClient: Send + Sync {
 pub struct DropboxHttpClient {
     token: String,
     client: reqwest::Client,
-    allowed_upload_prefix: String
+    allowed_upload_prefix: String,
 }
 
 /** Time-out for HTTP requests to the Dropbox API */
@@ -49,7 +49,11 @@ impl DropboxHttpClient {
             ))
             .build()
             .unwrap();
-        Self { token, client, allowed_upload_prefix }
+        Self {
+            token,
+            client,
+            allowed_upload_prefix,
+        }
     }
 
     /// Send a POST request to Dropbox API.
@@ -246,21 +250,33 @@ impl LlmClient for MistralHttpClient {
         let url = "https://api.mistral.ai/v1/chat/completions";
 
         // Transform the rules to a String:
-        let rules_str = rules.0.iter().map(|rule| format!("Description: {} -> <target>{}</target>", rule.description, rule.target)).collect::<Vec<String>>().join("\n");
+        let rules_str = rules
+            .0
+            .iter()
+            .map(|rule| {
+                format!(
+                    "Category: <name>{}</name> <description>{}</description>",
+                    rule.name, rule.description
+                )
+            })
+            .collect::<Vec<String>>()
+            .join("\n");
 
         let prompt = format!(
             "Extract Title, Authors, Abstract from the following scientific paper text. \
             Provide a 1-line summary. \
-            Match the abstract against these rules to select target paths: \n\n\
-            <rules>\n\
+            Match the abstract against these categories to select the applicable categories for the \
+            text.  \n\n\
+            <categories>\n\
             {}\
-            </rules>\n\n\
+            </categories>\n\n\
             Text:\n\n\
             <text>\
             {}\
             </text>\n\n\
-            Respond ONLY with JSON in this format, where targets are from any matching rules: \
-            {{\"title\": \"...\", \"authors\": [\"...\"], \"summary\": \"...\", \"abstract\": \"...\", \"targets\": [\"...\",\"...\"]}}",
+            Respond ONLY with JSON in this format, where the \"categories\" key has an array of \
+            strings with the exact names of the categories matched to the text:  \n\n\
+            {{\"title\": \"...\", \"authors\": [\"...\"], \"summary\": \"...\", \"abstract\": \"...\", \"categories\": [\"...\",\"...\"]}}",
             rules_str, text
         );
 
