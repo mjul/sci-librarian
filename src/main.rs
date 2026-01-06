@@ -64,6 +64,9 @@ enum Commands {
     },
 }
 
+// TODO: Get this as a parameter
+const DROPBOX_ALLOWED_UPLOAD_PREFIX: &'static str = "/sorted";
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::registry()
@@ -107,7 +110,8 @@ async fn main() -> Result<()> {
     let dropbox_token = get_env_var("DROPBOX_TOKEN")?;
     let mistral_key = get_env_var("MISTRAL_API_KEY")?;
 
-    let dropbox: Arc<dyn DropboxClient> = Arc::new(DropboxHttpClient::new(dropbox_token));
+
+    let dropbox: Arc<dyn DropboxClient> = Arc::new(DropboxHttpClient::new(dropbox_token, String::from(DROPBOX_ALLOWED_UPLOAD_PREFIX)));
     let llm: Arc<dyn LlmClient> = Arc::new(MistralHttpClient::new(mistral_key));
 
     let rules = Arc::new(get_rules());

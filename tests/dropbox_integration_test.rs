@@ -9,7 +9,7 @@ fn get_dropbox_token() -> String {
 #[tokio::test]
 async fn test_dropbox_list_folder() {
     let token = get_dropbox_token();
-    let client = DropboxHttpClient::new(token);
+    let client = DropboxHttpClient::new(token, String::from("/sorted"));
 
     let result = client.list_folder("").await;
 
@@ -22,10 +22,11 @@ async fn test_dropbox_list_folder() {
     println!("Found {} entries in root folder", entries.len());
 }
 
+
 #[tokio::test]
 async fn test_dropbox_download_file() {
     let token = get_dropbox_token();
-    let client = DropboxHttpClient::new(token);
+    let client = DropboxHttpClient::new(token, String::from("/sorted"));
 
     // First list folder to find a file to download
     let entries = client.list_folder("").await.expect("Failed to list folder");

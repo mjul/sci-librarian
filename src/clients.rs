@@ -33,20 +33,23 @@ pub trait LlmClient: Send + Sync {
 pub struct DropboxHttpClient {
     token: String,
     client: reqwest::Client,
+    allowed_upload_prefix: String
 }
 
 /** Time-out for HTTP requests to the Dropbox API */
 const DROPBOX_HTTP_TIMEOUT_IN_SECONDS: u64 = 3;
 
 impl DropboxHttpClient {
-    pub fn new(token: String) -> Self {
+    /// Create a Dropbox client with an API token and allowed upload prefix as a safe-guard against
+    /// uploading files outside the allowed directory.
+    pub fn new(token: String, allowed_upload_prefix: String) -> Self {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(
                 DROPBOX_HTTP_TIMEOUT_IN_SECONDS,
             ))
             .build()
             .unwrap();
-        Self { token, client }
+        Self { token, client, allowed_upload_prefix }
     }
 
     /// Send a POST request to Dropbox API.
@@ -115,8 +118,6 @@ impl DropboxHttpClient {
         }
     }
 }
-
-const DROPBOX_ALLOWED_UPLOAD_PREFIX: &'static str = "/dev-sci-librarian/";
 
 #[async_trait]
 impl DropboxClient for DropboxHttpClient {
@@ -190,11 +191,11 @@ impl DropboxClient for DropboxHttpClient {
     }
 
     async fn upload_file(&self, path: &RemotePath, content: Vec<u8>) -> Result<()> {
-        // Check allowed paths, for extra safety (hard-coded for now)
-        if !path.0.starts_with(DROPBOX_ALLOWED_UPLOAD_PREFIX) {
+        // Check allowed paths, for extra safety
+        if !path.0.starts_with(&self.allowed_upload_prefix) {
             return Err(anyhow::anyhow!(format!(
                 "Upload path not allowed to path: {} (allowed prefix: {})",
-                path.0, DROPBOX_ALLOWED_UPLOAD_PREFIX
+                path.0, &self.allowed_upload_prefix
             )));
         }
 
