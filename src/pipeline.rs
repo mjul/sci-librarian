@@ -250,7 +250,7 @@ async fn process_file(
         }
         let sidecar_path = RemotePath(format!("{}.md", &target.0));
         let sidecar_content = format!(
-            "# {}\n\nAuthors: {}\n\nSummary: {}\n\nAbstract: {}",
+            "# {}\n\n## Authors\n{}\n\n## Summary\n{}\n\n## Abstract\n{}",
             meta.title,
             meta.authors.join(", "),
             meta.summary.0,

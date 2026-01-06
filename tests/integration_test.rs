@@ -152,5 +152,8 @@ async fn test_full_scenario() {
             .clone(),
     )
     .unwrap();
-    assert!(sidecar.contains("Quantum Computing for Dummies"));
+    assert!(sidecar.contains("# Quantum Computing for Dummies"));
+    assert!(sidecar.contains("## Authors\nJohn Doe"));
+    assert!(sidecar.contains("## Summary\nA beginner's guide to quantum computing."));
+    assert!(sidecar.contains("## Abstract\nThis paper explains quantum computing in simple terms."));
 }

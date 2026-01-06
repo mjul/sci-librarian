@@ -90,7 +90,7 @@ Process a single file as a pure function.
 1. **Upload:**
    - For each target directory:
      - Upload the original PDF to the `Target Path` in Dropbox.
-     - Upload a sidecar Markdown file (`{filename}.md`) containing metadata and extracted text.
+     - Upload a sidecar Markdown file (`{filename}.md`) containing metadata and extracted text (headline # {title} and subsections ## Authors, ## Summary, ## Abstract). 
 
 ### 3.3. Indexing (`index`)
 
