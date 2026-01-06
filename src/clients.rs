@@ -3,6 +3,7 @@ use crate::models::{
 };
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -237,6 +238,16 @@ impl MistralHttpClient {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct MistralQueryResponse {
+    title: String,
+    authors: Vec<String>,
+    summary: String,
+    #[serde(rename = "abstract")]
+    abstract_text: String,
+    categories: Vec<String>,
+}
+
 #[async_trait]
 impl LlmClient for MistralHttpClient {
     async fn query_llm(&self, text: &str, rules: &Rules) -> Result<(ArticleMetadata, Vec<Rule>)> {
@@ -300,51 +311,18 @@ impl LlmClient for MistralHttpClient {
 
         tracing::debug!("Mistral response content: {}", content);
 
-        let parsed: serde_json::Value = serde_json::from_str(content)?;
-
-        // Verify that the response has the expected keys:
-        let title = parsed["title"]
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("LLM response has no title"))?;
-        let author_values = parsed["authors"]
-            .as_array()
-            .ok_or_else(|| anyhow::anyhow!("LLM response has no authors"))?;
-        let summary = parsed["summary"]
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("LLM response has no summary"))?;
-        let abstract_text = parsed["abstract"]
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("LLM response has no abstract"))?;
-        let category_values = parsed["categories"]
-            .as_array()
-            .ok_or_else(|| anyhow::anyhow!("LLM response has no categories"))?;
-
-        // Verify that all authors are strings
-        if !author_values.iter().all(|c| c.is_string()) {
-            return Err(anyhow::anyhow!("LLM response has non-string authors"));
-        }
-        let authors = author_values
-            .iter()
-            .map(|c| c.as_str().unwrap().to_string())
-            .collect::<Vec<String>>();
-
-        // Verify that all categories are strings
-        if !category_values.iter().all(|c| c.is_string()) {
-            return Err(anyhow::anyhow!("LLM response has non-string categories"));
-        }
-        let categories = category_values
-            .iter()
-            .map(|c| c.as_str().unwrap().to_string())
-            .collect::<Vec<String>>();
+        // Deserialize and validate the response shape
+        let response: MistralQueryResponse = serde_json::from_str(content)
+            .context("Failed to deserialize LLM response into expected shape")?;
 
         let meta = ArticleMetadata {
-            title: String::from(title),
-            authors: authors,
-            summary: OneLineSummary(String::from(summary)),
-            abstract_text: String::from(abstract_text),
+            title: response.title,
+            authors: response.authors,
+            summary: OneLineSummary(response.summary),
+            abstract_text: response.abstract_text,
         };
 
-        let unique_matching_rule_names = categories.iter().collect::<HashSet<_>>();
+        let unique_matching_rule_names = response.categories.iter().collect::<HashSet<_>>();
         let rules_by_name = rules
             .0
             .iter()
