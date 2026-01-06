@@ -11,7 +11,7 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::{info, debug};
+use tracing::info;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Parser)]
@@ -69,12 +69,13 @@ const DROPBOX_ALLOWED_UPLOAD_PREFIX: &'static str = "/sorted";
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    dotenvy::dotenv().ok();
+
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(EnvFilter::from_default_env())
         .init();
 
-    dotenvy::dotenv().ok();
     let cli = Cli::parse();
 
     // Initialize work directory
@@ -110,8 +111,10 @@ async fn main() -> Result<()> {
     let dropbox_token = get_env_var("DROPBOX_TOKEN")?;
     let mistral_key = get_env_var("MISTRAL_API_KEY")?;
 
-
-    let dropbox: Arc<dyn DropboxClient> = Arc::new(DropboxHttpClient::new(dropbox_token, String::from(DROPBOX_ALLOWED_UPLOAD_PREFIX)));
+    let dropbox: Arc<dyn DropboxClient> = Arc::new(DropboxHttpClient::new(
+        dropbox_token,
+        String::from(DROPBOX_ALLOWED_UPLOAD_PREFIX),
+    ));
     let llm: Arc<dyn LlmClient> = Arc::new(MistralHttpClient::new(mistral_key));
 
     let rules = Arc::new(get_rules());
@@ -144,7 +147,7 @@ fn get_rules() -> Rules {
             description: String::from(
                 "Neural Networks, Deep Learning, Large Language Models (LLMs), Reinforcement Learning and other large-scale text, image and video processing tasks using function approximators",
             ),
-            path: RemotePath::from("/sorted/ai")
+            path: RemotePath::from("/sorted/ai"),
         },
         Rule {
             name: String::from("Programming Language Theory"),
