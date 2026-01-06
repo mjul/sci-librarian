@@ -49,6 +49,7 @@ impl Pipeline {
         for file in pending {
             let job = Job {
                 id: file.dropbox_id,
+                file_name: file.file_name,
                 path: RemotePath("".to_string()), // We might need the path from DB if we store it
             };
             job_tx.send(job).await?;
@@ -79,7 +80,8 @@ impl Pipeline {
                     let mut rx = job_rx.lock().await;
                     rx.recv().await
                 } {
-                    pb.set_message(format!("Processing {}", job.id.0));
+                    let display_name = job.file_name.as_deref().unwrap_or("unknown");
+                    pb.set_message(format!("Processing {} ({})", display_name, job.id.0));
                     let result =
                         process_file(job, &*dropbox, &*llm, &work_dir, &rules)
                             .await;
@@ -104,6 +106,7 @@ impl Pipeline {
             match result {
                 JobResult::Success {
                     id,
+                    file_name,
                     meta: _,
                     target_paths: _,
                 } => {
@@ -112,11 +115,13 @@ impl Pipeline {
                     self.storage
                         .update_status(&id, FileStatus::Processed)
                         .await?;
-                    main_pb.println(format!("{} Processed {}", "✔".green(), id.0));
+                    let display_name = file_name.as_deref().unwrap_or("unknown");
+                    main_pb.println(format!("{} Processed {} ({})", "✔".green(), display_name, id.0));
                 }
-                JobResult::Failure { id, error } => {
+                JobResult::Failure { id, file_name, error } => {
                     self.storage.update_status(&id, FileStatus::Error).await?;
-                    main_pb.println(format!("{} Failed {}: {}", "✘".red(), id.0, error));
+                    let display_name = file_name.as_deref().unwrap_or("unknown");
+                    main_pb.println(format!("{} Failed {} ({}): {}", "✘".red(), display_name, id.0, error));
                 }
             }
             main_pb.inc(1);
@@ -145,6 +150,7 @@ async fn process_file(
         Err(e) => {
             return JobResult::Failure {
                 id: job.id,
+                file_name: job.file_name,
                 error: e.to_string(),
             };
         }
@@ -156,6 +162,7 @@ async fn process_file(
     if let Err(e) = fs::write(&local_path, &content) {
         return JobResult::Failure {
             id: job.id,
+            file_name: job.file_name,
             error: format!("Failed to save local copy: {}", e),
         };
     }
@@ -166,6 +173,7 @@ async fn process_file(
         Err(e) => {
             return JobResult::Failure {
                 id: job.id,
+                file_name: job.file_name,
                 error: e.to_string(),
             };
         }
@@ -177,6 +185,7 @@ async fn process_file(
         Err(e) => {
             return JobResult::Failure {
                 id: job.id,
+                file_name: job.file_name,
                 error: e.to_string(),
             };
         }
@@ -187,6 +196,7 @@ async fn process_file(
         if let Err(e) = dropbox.upload_file(target, content.clone()).await {
             return JobResult::Failure {
                 id: job.id,
+                file_name: job.file_name,
                 error: e.to_string(),
             };
         }
@@ -204,6 +214,7 @@ async fn process_file(
         {
             return JobResult::Failure {
                 id: job.id,
+                file_name: job.file_name,
                 error: e.to_string(),
             };
         }
@@ -211,6 +222,7 @@ async fn process_file(
 
     JobResult::Success {
         id: job.id,
+        file_name: job.file_name,
         meta,
         target_paths: targets,
     }

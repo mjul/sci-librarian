@@ -62,17 +62,20 @@ pub struct FileRecord {
 
 pub struct Job {
     pub id: DropboxId,
+    pub file_name: Option<String>,
     pub path: RemotePath,
 }
 
 pub enum JobResult {
     Success {
         id: DropboxId,
+        file_name: Option<String>,
         meta: ArticleMetadata,
         target_paths: Vec<RemotePath>,
     },
     Failure {
         id: DropboxId,
+        file_name: Option<String>,
         error: String,
     },
 }

@@ -12,16 +12,24 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::info;
-use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Parser)]
 #[command(name = "sci-librarian")]
 #[command(about = "Organize scientific articles in Dropbox", long_about = None)]
 struct Cli {
+    /// Path to the application working directory with state database and temporary files.
     #[arg(short, long, global = true, default_value = "working")]
     work_directory: PathBuf,
 
-    #[arg(short, long, global = true, default_value = "/0_inbox")]
+    /// Path to application inbox. This is where files are picked up for processing.
+    #[arg(
+        short,
+        long,
+        global = true,
+        default_value = "",
+        long_help = "If your app is restricted to just its own folder under Apps, the path to that folder is the empty string. If you bravely gave it access to your whole Dropbox account, the root folder is the empty string, all other folders start with a '/'."
+    )]
     inbox: String,
 
     #[command(subcommand)]
@@ -114,7 +122,7 @@ async fn main() -> Result<()> {
         Commands::Sync => {
             execute_sync(&inbox, &storage, &dropbox).await?;
         }
-        Commands::Process { jobs , batch_size} => {
+        Commands::Process { jobs, batch_size } => {
             execute_process(rules, work_dir, &storage, &dropbox, llm, jobs, batch_size).await?;
         }
         Commands::Index { path } => {
@@ -128,13 +136,17 @@ async fn main() -> Result<()> {
 fn get_rules() -> Rules {
     Rules::from(vec![
         Rule {
-            description: String::from("Neural Networks, Deep Learning, Large Language Models (LLMs), Reinforcement Learning and other large-scale text, image and video processing tasks using function approximators"),
-            target: String::from("/dev-sci-librarian/ai")
+            description: String::from(
+                "Neural Networks, Deep Learning, Large Language Models (LLMs), Reinforcement Learning and other large-scale text, image and video processing tasks using function approximators",
+            ),
+            target: String::from("/dev-sci-librarian/ai"),
         },
         Rule {
-            description: String::from("Programming language theory, parsers, compilers, partial evaluation, type systems etc."),
-            target: String::from("/dev-sci-librarian/databases")
-        }
+            description: String::from(
+                "Programming language theory, parsers, compilers, partial evaluation, type systems etc.",
+            ),
+            target: String::from("/dev-sci-librarian/databases"),
+        },
     ])
 }
 
@@ -179,7 +191,9 @@ async fn execute_sync(
     let entries = dropbox.list_folder(&inbox.0).await?;
     let count = entries.len();
     for entry in entries {
-        storage.upsert_file(&entry.id, &entry.name, &entry.content_hash).await?;
+        storage
+            .upsert_file(&entry.id, &entry.name, &entry.content_hash)
+            .await?;
     }
     info!("{}: Found {} files.", "Sync complete".green(), count);
     Ok(())
