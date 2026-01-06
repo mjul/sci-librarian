@@ -217,8 +217,7 @@ impl DropboxClient for DropboxHttpClient {
             Some(&arg),
             Some("application/octet-stream"),
         )
-        .await
-        .with_context(|| format!("Failed to upload file to {}", path.0))?;
+        .await?;
 
         Ok(())
     }
