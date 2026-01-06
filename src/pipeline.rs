@@ -145,11 +145,12 @@ async fn process_file(
     rules: &Rules,
 ) -> JobResult {
     // 1. Download
+    tracing::debug!("Downloading file {} ({})", &job.file_name.clone().unwrap_or_else(|| String::from("")), &job.id.0);
     let content = match dropbox.download_file(&job.id).await {
         Ok(c) => c,
         Err(e) => {
             return JobResult::Failure {
-                id: job.id,
+                id: job.id.clone(),
                 file_name: job.file_name,
                 error: e.to_string(),
             };
@@ -157,6 +158,7 @@ async fn process_file(
     };
 
     // 2. Save to local raw directory
+    tracing::debug!("Saving file {} ({}) to local raw directory", &job.file_name.clone().unwrap_or_else(|| String::from("")), &job.id.0);
     let sanitized_id = job.id.0.replace([':', '/', '\\', ' '], "_");
     let local_path = work_dir.0.join("raw").join(format!("{}.pdf", sanitized_id));
     if let Err(e) = fs::write(&local_path, &content) {
@@ -168,6 +170,7 @@ async fn process_file(
     }
 
     // 3. Extract Text (lopdf)
+    tracing::debug!("Extracting text from file {} ({})", &job.file_name.clone().unwrap_or_else(|| String::from("")), &job.id.0);
     let text = match extract_text(&content) {
         Ok(t) => t,
         Err(e) => {
@@ -180,9 +183,11 @@ async fn process_file(
     };
 
     // 4. LLM Analysis
+    tracing::debug!("Querying LLM for file {} ({})", &job.file_name.clone().unwrap_or_else(|| String::from("")), &job.id.0);
     let (meta, targets) = match llm.query_llm(&text, &rules).await {
         Ok(r) => r,
         Err(e) => {
+            tracing::warn!("LLM query failed: {}", e);
             return JobResult::Failure {
                 id: job.id,
                 file_name: job.file_name,
@@ -192,6 +197,7 @@ async fn process_file(
     };
 
     // 5. Upload
+    tracing::debug!("Uploading file {} ({}) to Dropbox", &job.file_name.clone().unwrap_or_else(|| String::from("")), &job.id.0);
     for target in &targets {
         if let Err(e) = dropbox.upload_file(target, content.clone()).await {
             return JobResult::Failure {
