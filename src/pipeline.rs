@@ -82,9 +82,7 @@ impl Pipeline {
                 } {
                     let display_name = job.file_name.as_deref().unwrap_or("unknown");
                     pb.set_message(format!("Processing {} ({})", display_name, job.id.0));
-                    let result =
-                        process_file(job, &*dropbox, &*llm, &work_dir, &rules)
-                            .await;
+                    let result = process_file(job, &*dropbox, &*llm, &work_dir, &rules).await;
                     let _ = result_tx.send(result).await;
                 }
                 pb.finish_with_message(format!("Worker {} idle", i));
@@ -116,12 +114,27 @@ impl Pipeline {
                         .update_status(&id, FileStatus::Processed)
                         .await?;
                     let display_name = file_name.as_deref().unwrap_or("unknown");
-                    main_pb.println(format!("{} Processed {} ({})", "✔".green(), display_name, id.0));
+                    main_pb.println(format!(
+                        "{} Processed {} ({})",
+                        "✔".green(),
+                        display_name,
+                        id.0
+                    ));
                 }
-                JobResult::Failure { id, file_name, error } => {
+                JobResult::Failure {
+                    id,
+                    file_name,
+                    error,
+                } => {
                     self.storage.update_status(&id, FileStatus::Error).await?;
                     let display_name = file_name.as_deref().unwrap_or("unknown");
-                    main_pb.println(format!("{} Failed {} ({}): {}", "✘".red(), display_name, id.0, error));
+                    main_pb.println(format!(
+                        "{} Failed {} ({}): {}",
+                        "✘".red(),
+                        display_name,
+                        id.0,
+                        error
+                    ));
                 }
             }
             main_pb.inc(1);
@@ -145,7 +158,11 @@ async fn process_file(
     rules: &Rules,
 ) -> JobResult {
     // 1. Download
-    tracing::debug!("Downloading file {} ({})", &job.file_name.clone().unwrap_or_else(|| String::from("")), &job.id.0);
+    tracing::debug!(
+        "Downloading file {} ({})",
+        &job.file_name.clone().unwrap_or_else(|| String::from("")),
+        &job.id.0
+    );
     let content = match dropbox.download_file(&job.id).await {
         Ok(c) => c,
         Err(e) => {
@@ -158,7 +175,11 @@ async fn process_file(
     };
 
     // 2. Save to local raw directory
-    tracing::debug!("Saving file {} ({}) to local raw directory", &job.file_name.clone().unwrap_or_else(|| String::from("")), &job.id.0);
+    tracing::debug!(
+        "Saving file {} ({}) to local raw directory",
+        &job.file_name.clone().unwrap_or_else(|| String::from("")),
+        &job.id.0
+    );
     let sanitized_id = job.id.0.replace([':', '/', '\\', ' '], "_");
     let local_path = work_dir.0.join("raw").join(format!("{}.pdf", sanitized_id));
     if let Err(e) = fs::write(&local_path, &content) {
@@ -170,7 +191,11 @@ async fn process_file(
     }
 
     // 3. Extract Text (lopdf)
-    tracing::debug!("Extracting text from file {} ({})", &job.file_name.clone().unwrap_or_else(|| String::from("")), &job.id.0);
+    tracing::debug!(
+        "Extracting text from file {} ({})",
+        &job.file_name.clone().unwrap_or_else(|| String::from("")),
+        &job.id.0
+    );
     let text = match extract_text(&content) {
         Ok(t) => t,
         Err(e) => {
@@ -183,7 +208,11 @@ async fn process_file(
     };
 
     // 4. LLM Analysis
-    tracing::debug!("Querying LLM for file {} ({})", &job.file_name.clone().unwrap_or_else(|| String::from("")), &job.id.0);
+    tracing::debug!(
+        "Querying LLM for file {} ({})",
+        &job.file_name.clone().unwrap_or_else(|| String::from("")),
+        &job.id.0
+    );
     let (meta, targets) = match llm.query_llm(&text, &rules).await {
         Ok(r) => r,
         Err(e) => {
@@ -197,9 +226,14 @@ async fn process_file(
     };
 
     // 5. Upload
-    tracing::debug!("Uploading file {} ({}) to Dropbox", &job.file_name.clone().unwrap_or_else(|| String::from("")), &job.id.0);
+    tracing::debug!(
+        "Uploading file {} ({}) to Dropbox",
+        &job.file_name.clone().unwrap_or_else(|| String::from("")),
+        &job.id.0
+    );
     for target in &targets {
         if let Err(e) = dropbox.upload_file(target, content.clone()).await {
+            tracing::warn!("Failed to upload file {} to Dropbox: {:?}", target.0, e);
             return JobResult::Failure {
                 id: job.id,
                 file_name: job.file_name,
@@ -218,6 +252,7 @@ async fn process_file(
             .upload_file(&sidecar_path, sidecar_content.into_bytes())
             .await
         {
+            tracing::warn!("Failed to upload file {} to Dropbox: {:?}", target.0, e);
             return JobResult::Failure {
                 id: job.id,
                 file_name: job.file_name,
