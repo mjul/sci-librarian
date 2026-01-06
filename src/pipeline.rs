@@ -226,22 +226,29 @@ async fn process_file(
     };
 
     // 5. Upload
+    let remote_file_name = job
+        .file_name
+        .clone()
+        .unwrap_or_else(|| format!("{}.pdf", sanitized_id));
     tracing::debug!(
         "Uploading file {} ({}) to Dropbox",
         &job.file_name.clone().unwrap_or_else(|| String::from("")),
         &job.id.0
     );
-    let targets = matching_rules.iter().map(|x|x.path.clone()).collect::<Vec<RemotePath>>();
+    let targets = matching_rules
+        .iter()
+        .map(|x| RemotePath(format!("{}/{}", x.path.0, remote_file_name)))
+        .collect::<Vec<RemotePath>>();
     for target in &targets {
-        if let Err(e) = dropbox.upload_file(target, content.clone()).await {
-            tracing::warn!("Failed to upload file {} to Dropbox: {:?}", target.0, e);
+        if let Err(e) = dropbox.upload_file(&target, content.clone()).await {
+            tracing::warn!("Failed to upload file {} to Dropbox: {:?}", &target.0, e);
             return JobResult::Failure {
                 id: job.id,
                 file_name: job.file_name,
                 error: e.to_string(),
             };
         }
-        let sidecar_path = RemotePath(format!("{}.md", target.0));
+        let sidecar_path = RemotePath(format!("{}.md", &target.0));
         let sidecar_content = format!(
             "# {}\n\nAuthors: {}\n\nSummary: {}\n\nAbstract: {}",
             meta.title,
