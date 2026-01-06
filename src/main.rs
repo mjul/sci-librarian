@@ -143,13 +143,13 @@ fn get_rules() -> Rules {
             description: String::from(
                 "Neural Networks, Deep Learning, Large Language Models (LLMs), Reinforcement Learning and other large-scale text, image and video processing tasks using function approximators",
             ),
-            target: String::from("/dev-sci-librarian/ai"),
+            target: String::from("/sorted/ai"),
         },
         Rule {
             description: String::from(
                 "Programming language theory, parsers, compilers, partial evaluation, type systems etc.",
             ),
-            target: String::from("/dev-sci-librarian/databases"),
+            target: String::from("/sorted/databases"),
         },
     ])
 }
