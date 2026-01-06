@@ -1,4 +1,4 @@
-use lopdf::dictionary;
+use lopdf::{dictionary, Document};
 use sci_librarian::clients::{DropboxClient, DropboxEntry, FakeDropboxClient, FakeMistralClient};
 use sci_librarian::models::Rules;
 use sci_librarian::models::{
@@ -11,21 +11,7 @@ use sci_librarian::storage::Storage;
 use std::fs;
 use std::sync::Arc;
 
-#[tokio::test]
-async fn test_full_scenario() {
-    // 1. Setup
-    let temp_dir = tempfile::tempdir().unwrap();
-    let work_dir = WorkDirectory(temp_dir.path().to_path_buf());
-    fs::create_dir_all(work_dir.0.join("raw")).unwrap();
-
-    let db_path = work_dir.0.join("state.db");
-    let db_url = format!("sqlite:///{}", db_path.to_string_lossy().replace('\\', "/"));
-    let pool = setup_db(&db_url).await.unwrap();
-    let storage = Arc::new(Storage::new(pool));
-    let mut dropbox = FakeDropboxClient::new();
-    let llm = FakeMistralClient::new();
-
-    // Create a valid PDF using lopdf
+fn create_pdf(content:  &str) -> Document {
     let mut doc = lopdf::Document::with_version("1.4");
     let pages_id = doc.new_object_id();
     let font_id = doc.add_object(dictionary! {
@@ -38,8 +24,8 @@ async fn test_full_scenario() {
             "F1" => font_id,
         },
     });
-    let content = b"BT /F1 12 Tf 100 700 Td (Quantum Computing) Tj ET";
-    let content_id = doc.add_object(lopdf::Stream::new(dictionary! {}, content.to_vec()));
+    let content_bytes : &[u8] = content.as_bytes();
+    let content_id = doc.add_object(lopdf::Stream::new(dictionary! {}, content_bytes.to_vec()));
     let page_id = doc.add_object(dictionary! {
         "Type" => "Page",
         "Parent" => pages_id,
@@ -59,6 +45,24 @@ async fn test_full_scenario() {
         "Pages" => pages_id,
     });
     doc.trailer.set("Root", catalog_id);
+    doc
+}
+#[tokio::test]
+async fn test_full_scenario() {
+    // 1. Setup
+    let temp_dir = tempfile::tempdir().unwrap();
+    let work_dir = WorkDirectory(temp_dir.path().to_path_buf());
+    fs::create_dir_all(work_dir.0.join("raw")).unwrap();
+
+    let db_path = work_dir.0.join("state.db");
+    let db_url = format!("sqlite:///{}", db_path.to_string_lossy().replace('\\', "/"));
+    let pool = setup_db(&db_url).await.unwrap();
+    let storage = Arc::new(Storage::new(pool));
+    let mut dropbox = FakeDropboxClient::new();
+    let llm = FakeMistralClient::new();
+
+    // Create a valid PDF using lopdf
+    let mut doc = create_pdf("BT /F1 12 Tf 100 700 Td (Quantum Computing) Tj ET");
 
     let mut paper_content = Vec::new();
     doc.save_to(&mut paper_content).unwrap();
