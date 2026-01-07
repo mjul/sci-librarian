@@ -62,6 +62,8 @@ enum Commands {
         #[arg(short, long)]
         path: String,
     },
+    /// Initialize working directory and Dropbox folders
+    Init,
 }
 
 // TODO: Get this as a parameter
@@ -135,6 +137,9 @@ async fn main() -> Result<()> {
         Commands::Index { path } => {
             execute_index(&storage, dropbox, &path).await?;
         }
+        Commands::Init => {
+            execute_init(rules, dropbox).await?;
+        }
     }
 
     Ok(())
@@ -179,6 +184,16 @@ async fn execute_index(
     println!("Indexing {}...", path);
     generate_index(&storage, &*dropbox, &path).await?;
     println!("{}", "Indexing complete.".green());
+    Ok(())
+}
+
+async fn execute_init(rules: Arc<Rules>, dropbox: Arc<dyn DropboxClient>) -> Result<(), Error> {
+    println!("Initializing Dropbox folders...");
+    for rule in &rules.0 {
+        println!("Ensuring folder exists: {}", rule.path.0);
+        dropbox.create_folder_if_not_exists(&rule.path.0).await?;
+    }
+    println!("{}", "Initialization complete.".green());
     Ok(())
 }
 
