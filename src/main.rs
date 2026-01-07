@@ -12,7 +12,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::info;
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 #[derive(Parser)]
 #[command(name = "sci-librarian")]
@@ -80,35 +80,24 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    // Initialize work directory
-    fs::create_dir_all(&cli.work_directory)?;
-    let work_dir_abs = if cli.work_directory.is_absolute() {
-        cli.work_directory.clone()
-    } else {
-        env::current_dir()?.join(&cli.work_directory)
-    };
-    let work_dir = WorkDirectory(work_dir_abs.clone());
+    let work_dir_buf = Cli::parse().work_directory;
+    let work_dir = absolute_work_directory(&work_dir_buf)?;
+    let files = init_work_directory_and_db(work_dir).await?;
     info!(
         "{}: {}",
         "Using working directory".cyan().bold(),
-        work_dir_abs.to_string_lossy()
+        &files.work_directory.0.to_string_lossy()
     );
-
-    let inbox = DropboxInbox(cli.inbox.clone());
-    info!("{}: {}", "Using Dropbox inbox".cyan().bold(), inbox.0);
-
-    // Ensure raw directory exists
-    fs::create_dir_all(work_dir.0.join("raw"))?;
-
-    let db_path = work_dir.0.join("state.db");
-    let db_url = format!("sqlite:///{}", db_path.to_string_lossy().replace('\\', "/"));
     info!(
         "{}: {}",
         "Using SQLite file".cyan().bold(),
-        db_path.to_string_lossy()
+        &files.database_path.to_string_lossy()
     );
-    let pool = setup_db(&db_url).await?;
-    let storage = Arc::new(Storage::new(pool));
+    let work_dir = files.work_directory;
+    let storage = files.storage;
+
+    let inbox = DropboxInbox(cli.inbox.clone());
+    info!("{}: {}", "Using Dropbox inbox".cyan().bold(), inbox.0);
 
     let dropbox_token = get_env_var("DROPBOX_TOKEN")?;
     let mistral_key = get_env_var("MISTRAL_API_KEY")?;
@@ -138,11 +127,45 @@ async fn main() -> Result<()> {
             execute_index(&storage, dropbox, &path).await?;
         }
         Commands::Init => {
-            execute_init(rules, dropbox).await?;
+            execute_init(rules, work_dir, dropbox).await?;
         }
     }
 
     Ok(())
+}
+
+struct LocalFiles {
+    work_directory: WorkDirectory,
+    database_path: PathBuf,
+    storage: Arc<Storage>,
+}
+
+fn absolute_work_directory(work_dir_path: &PathBuf) -> Result<WorkDirectory, Error> {
+    let work_dir_abs = if work_dir_path.is_absolute() {
+        work_dir_path.clone()
+    } else {
+        env::current_dir()?.join(&work_dir_path)
+    };
+    Ok(WorkDirectory(work_dir_abs.clone()))
+}
+
+async fn init_work_directory_and_db(work_directory: WorkDirectory) -> Result<LocalFiles, Error> {
+    let WorkDirectory(work_dir_path) = &work_directory;
+    // Initialize work directory
+    fs::create_dir_all(work_dir_path)?;
+
+    // Ensure raw directory exists
+    fs::create_dir_all(work_dir_path.join("raw"))?;
+
+    let db_path = work_dir_path.join("state.db");
+    let db_url = format!("sqlite:///{}", db_path.to_string_lossy().replace('\\', "/"));
+    let pool = setup_db(&db_url).await?;
+    let storage = Arc::new(Storage::new(pool));
+    Ok(LocalFiles {
+        work_directory,
+        database_path: db_path,
+        storage,
+    })
 }
 
 fn get_rules() -> Rules {
@@ -187,7 +210,13 @@ async fn execute_index(
     Ok(())
 }
 
-async fn execute_init(rules: Arc<Rules>, dropbox: Arc<dyn DropboxClient>) -> Result<(), Error> {
+async fn execute_init(
+    rules: Arc<Rules>,
+    work_directory: WorkDirectory,
+    dropbox: Arc<dyn DropboxClient>,
+) -> Result<(), Error> {
+    println!("Initializing working directory...");
+    init_work_directory_and_db(work_directory).await?;
     println!("Initializing Dropbox folders...");
     for rule in &rules.0 {
         println!("Ensuring folder exists: {}", rule.path.0);

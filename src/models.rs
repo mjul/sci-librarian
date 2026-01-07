@@ -97,7 +97,7 @@ pub struct Rule {
 
 /** This is a struct representing all the rules for categorizing files. */
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Rules(pub(crate) Vec<Rule>);
+pub struct Rules(pub Vec<Rule>);
 
 impl From<Vec<Rule>> for Rules {
     fn from(rules: Vec<Rule>) -> Self {
