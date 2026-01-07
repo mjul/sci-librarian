@@ -221,7 +221,8 @@ impl DropboxClient for DropboxHttpClient {
             Some(&arg),
             Some("application/octet-stream"),
         )
-        .await?;
+        .await
+        .with_context(|| format!("Failed to upload file to Dropbox path {}", path.0))?;
 
         Ok(())
     }
@@ -243,7 +244,8 @@ impl DropboxClient for DropboxHttpClient {
             .header("Content-Type", "application/json")
             .body(body_bytes)
             .send()
-            .await?;
+            .await
+            .with_context(|| format!("Failed to get metadata for {}", path))?;
 
         if res_raw.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(false);
@@ -276,7 +278,8 @@ impl DropboxClient for DropboxHttpClient {
 
         let body_bytes = serde_json::to_vec(&body)?;
         self.dropbox_post_request(url, Some(body_bytes), None, Some("application/json"))
-            .await?;
+            .await
+            .with_context(|| format!("Failed to create Dropbox folder {}", path))?;
 
         Ok(())
     }
