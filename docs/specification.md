@@ -1,7 +1,7 @@
 # Product Requirements Document: Sci-Librarian
 
 | **Project Name** | sci-librarian                                    |
-| :--------------- | :----------------------------------------------- |
+|:-----------------|:-------------------------------------------------|
 | **Version**      | 1.0 (Draft)                                      |
 | **Date**         | December 30, 2025                                |
 | **Status**       | Approved for Development                         |
@@ -9,7 +9,8 @@
 
 ## 1. Executive Summary
 
-**sci-librarian** is a CLI-based automation tool designed to organize scientific articles saved to its inbox directory in Dropbox.
+**sci-librarian** is a CLI-based automation tool designed to organize scientific articles saved to its inbox directory
+in Dropbox.
 
 It automates the ingestion of PDFs from a Dropbox Inbox folder, extracts metadata and text using pure Rust libraries,
 classifies papers using LLMs based on semantic rules, and archives them into an organized folder structure.
@@ -18,9 +19,12 @@ It features a concurrent, state-aware architecture that ensures incremental proc
 
 ## 2. Core Philosophy
 
-- **Local-First \& Idempotent:** All state is tracked locally in SQLite. The tool can be stopped and restarted without losing progress or duplicating work.
-- **Pure Rust \& Self-Contained:** A single binary executable with no heavy runtime dependencies (no Docker, no Python, no Poppler).
-- **Strictly Typed:** Uses semantic types (newtypes) to prevent logic errors (_e.g._, distinguishing a `DropboxId` from a `FileHash`).
+- **Local-First \& Idempotent:** All state is tracked locally in SQLite. The tool can be stopped and restarted without
+  losing progress or duplicating work.
+- **Pure Rust \& Self-Contained:** A single binary executable with no heavy runtime dependencies (no Docker, no Python,
+  no Poppler).
+- **Strictly Typed:** Uses semantic types (newtypes) to prevent logic errors (_e.g._, distinguishing a `DropboxId` from
+  a `FileHash`).
 - **Concurrency:** Efficient parallel processing of file batches with a unified UI.
 
 ## 3. Functional Workflows
@@ -65,7 +69,8 @@ Control loop for processing pending files concurrently.
 1. Select pending files from `state.db`
 2. For each file, place file information on Work Queue for processing (see `process-file` below).
 3. Collect results from worker threads.
-4. **State Update:** As results from `process-file` arrive, mark file as `Processed` in `state.db`; record `target_path`, record `summary`, record `abstract` (extracted title, authors and abstract).
+4. **State Update:** As results from `process-file` arrive, mark file as `Processed` in `state.db`; record
+   `target_path`, record `summary`, record `abstract` (extracted title, authors and abstract).
 
 ### 3.2.B Processing (`process-file`)
 
@@ -77,7 +82,8 @@ Process a single file as a pure function.
 
 1. **Extraction:** Use `lopdf` to extract raw text strings from the first ~5 pages.
 2. **Analysis (LLM):** Send text to an LLM (_e.g._, Gemini Flash).
-   - _Prompt:_ "Extract Title, Authors, Abstract. Provide a 1-line summary. Match abstract against provided Rules to select a Target Path."
+    - _Prompt:_ "Extract Title, Authors, Abstract. Provide a 1-line summary. Match abstract against provided Rules to
+      select a Target Path."
 3. **Return:** `target_path` array (possibly empty), extracted metadata (summary, title, authors, abstract).
 
 ### 3.2.C Upload (`upload`)
@@ -88,9 +94,10 @@ Process a single file as a pure function.
 - **Logic (Per File):**
 
 1. **Upload:**
-   - For each target directory:
-     - Upload the original PDF to the `Target Path` in Dropbox.
-     - Upload a sidecar Markdown file (`{filename}.md`) containing metadata and extracted text (headline # {title} and subsections ## Authors, ## Summary, ## Abstract). 
+    - For each target directory:
+        - Upload the original PDF to the `Target Path` in Dropbox.
+        - Upload a sidecar Markdown file (`{filename}.md`) containing metadata and extracted text (headline # {title}
+          and subsections ## Authors, ## Summary, ## Abstract).
 
 ### 3.3. Indexing (`index`)
 
@@ -100,8 +107,18 @@ Process a single file as a pure function.
 
 1. Query DB for all archived files in specific target directories.
 2. Generate a `README.md` containing a Markdown table:
-   - Columns: `Title` (linked to PDF), `Authors`, `One-Line Summary`.
+    - Columns: `Title` (linked to PDF), `Authors`, `One-Line Summary`.
 3. Upload/Overwrite `README.md` in the respective Dropbox folder.
+
+### 3.4. Initialization (`init`)
+
+- **Trigger:** subcommand `init`
+- **Concurrency:** Single threaded.
+- **Logic:**
+
+1. Create working directory.
+2. Create initial `state.db` file.
+3. For each rule, create the corresponding folder at its path in Dropbox if it does not exist.
 
 ## 4. Technical Architecture
 
@@ -110,8 +127,10 @@ Process a single file as a pure function.
 To ensure SQLite integrity and UI stability, the system uses a **Producer-Consumer** model.
 
 1. **Scanner:** Pushes `Job` structs to a generic queue.
-2. **Workers (xN):** Pick up jobs, perform I/O (Download -> Extract -> LLM -> Upload), and send `JobResult` to a result queue. **No DB writes happen here.**
-3. **Collector (Actor):** The single owner of the SQLite connection and Progress Bar. It listens to the result queue, writes success/failure to the DB, and updates the UI.
+2. **Workers (xN):** Pick up jobs, perform I/O (Download -> Extract -> LLM -> Upload), and send `JobResult` to a result
+   queue. **No DB writes happen here.**
+3. **Collector (Actor):** The single owner of the SQLite connection and Progress Bar. It listens to the result queue,
+   writes success/failure to the DB, and updates the UI.
 
 ### 4.2. Data Models (Strict Types)
 
@@ -137,18 +156,19 @@ pub enum JobResult {
 ### 4.3. Database Schema (SQLite)
 
 ```sql
-CREATE TABLE files (
-    dropbox_id TEXT PRIMARY KEY,
+CREATE TABLE files
+(
+    dropbox_id   TEXT PRIMARY KEY,
     content_hash TEXT NOT NULL,
-    status TEXT NOT NULL,       -- 'PENDING', 'ARCHIVED'
-    title TEXT,
-    authors TEXT,               -- JSON array
-    summary TEXT,               -- Cached for README generation
-    target_path TEXT,           -- For indexing lookups
-    last_error TEXT,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    status       TEXT NOT NULL, -- 'PENDING', 'ARCHIVED'
+    title        TEXT,
+    authors      TEXT,          -- JSON array
+    summary      TEXT,          -- Cached for README generation
+    target_path  TEXT,          -- For indexing lookups
+    last_error   TEXT,
+    updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX idx_folder ON files(target_path);
+CREATE INDEX idx_folder ON files (target_path);
 ```
 
 ## 4.4 Testability
@@ -167,7 +187,7 @@ Fail nicely with a helpful error message showing how to solve the problem rather
 ## 5. Technology Stack
 
 | Component         | Choice                  | Justification                                    |
-| :---------------- | :---------------------- | :----------------------------------------------- |
+|:------------------|:------------------------|:-------------------------------------------------|
 | **Language**      | **Rust (2021)**         | Performance, safety, single binary distribution. |
 | **CLI**           | **`clap`**              | Standard, robust argument parsing.               |
 | **Async Runtime** | **`tokio`**             | Required for concurrent I/O.                     |
@@ -204,7 +224,8 @@ $ sci-librarian run --inbox "/MyInbox"
 
 ## 7. Configuration
 
-- API keys and secrets for Dropbox and Mistral AI are given via environment variables. Validate that these exist on program start.
+- API keys and secrets for Dropbox and Mistral AI are given via environment variables. Validate that these exist on
+  program start.
 - Dropbox Inbox path is given by CLI parameter `--inbox` (default: `/0_inbox`).
 - Batch size is given by CLI parameter (default: 10)
 - Rules file is in `rules.yaml`, or specified via `--rules {filename}` parameter.
@@ -212,21 +233,29 @@ $ sci-librarian run --inbox "/MyInbox"
 ## 8. Testing
 
 - Add unit tests where applicable. Unit tests do not touch the network or file system.
-- Add integration tests. This is the outer test loop driving the implementation. These are allowed to use the local file system (set up a temp directory for each test). They are allowed to use the Mistral AI. They are not allowed to write to external systems, so they must use a Fake for Dropbox that just OKs write operations.
-  - test each CLI step individually
-  - add an full scenario sync to indexing scenarios with a Fake DropboxClient instance that returns a given list of new files and accepts all uploads with OK, and a Fake Mistral AI client instance.
-  - add the same full scenario, with the real Mistral AI instance and the Fake DropboxClient instance to verify Mistral AI integration.
-- Since Dropbox operations are potentially destructive, we will not provide Dropbox API tokens to the automated tests. Use a Fake DropboxClient only.
+- Add integration tests. This is the outer test loop driving the implementation. These are allowed to use the local file
+  system (set up a temp directory for each test). They are allowed to use the Mistral AI. They are not allowed to write
+  to external systems, so they must use a Fake for Dropbox that just OKs write operations.
+    - test each CLI step individually
+    - add an full scenario sync to indexing scenarios with a Fake DropboxClient instance that returns a given list of
+      new files and accepts all uploads with OK, and a Fake Mistral AI client instance.
+    - add the same full scenario, with the real Mistral AI instance and the Fake DropboxClient instance to verify
+      Mistral AI integration.
+- Since Dropbox operations are potentially destructive, we will not provide Dropbox API tokens to the automated tests.
+  Use a Fake DropboxClient only.
 
 ## 9. Development Roadmap
 
 1. **Phase 1: Foundation.** Setup `clap`, `config`, and Dropbox `sync` (list \& download). Setup SQLite migrations.
-2. **Phase 2: The Pipeline.** Implement `lopdf` extraction and the Mistral AI client. Create the `Job` / `Result` message structures.
+2. **Phase 2: The Pipeline.** Implement `lopdf` extraction and the Mistral AI client. Create the `Job` / `Result`
+   message structures.
 3. **Phase 3: The Actor.** Implement the Collector loop and `indicatif` integration. Wire up the parallel workers.
 4. **Phase 4: Indexing.** Implement the `README.md` generator and upload logic.
 5. **Phase 5: Refinement.** Add retry logic for network flakes and robust error reporting.
 
 ## 10. Constraints \& Out of Scope
 
-- **OCR:** We will not perform OCR on image-only PDFs. If `lopdf` extracts no text, the file will be flagged as `Skipped/ImageOnly`.
-- **Perfect Layout:** Markdown output will be raw text; we do not attempt to preserve complex multi-column layouts visually, as the LLM handles the semantic reconstruction.
+- **OCR:** We will not perform OCR on image-only PDFs. If `lopdf` extracts no text, the file will be flagged as
+  `Skipped/ImageOnly`.
+- **Perfect Layout:** Markdown output will be raw text; we do not attempt to preserve complex multi-column layouts
+  visually, as the LLM handles the semantic reconstruction.
