@@ -105,13 +105,12 @@ impl Pipeline {
                 JobResult::Success {
                     id,
                     file_name,
-                    meta: _,
+                    meta,
                     target_paths: _,
                 } => {
                     // Update DB with metadata and status
-                    // For now, just update status
                     self.storage
-                        .update_status(&id, FileStatus::Processed)
+                        .update_metadata(&id, meta, FileStatus::Processed)
                         .await?;
                     let display_name = file_name.as_deref().unwrap_or("unknown");
                     main_pb.println(format!(

@@ -1,4 +1,4 @@
-use crate::models::{DropboxId, FileHash, FileRecord, FileStatus};
+use crate::models::{ArticleMetadata, DropboxId, FileHash, FileRecord, FileStatus};
 use anyhow::Result;
 use chrono::Utc;
 use sqlx::SqlitePool;
@@ -10,6 +10,35 @@ pub struct Storage {
 impl Storage {
     pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
+    }
+
+    pub async fn update_metadata(
+        &self,
+        id: &DropboxId,
+        meta: ArticleMetadata,
+        status: FileStatus,
+    ) -> Result<()> {
+        let authors_json = serde_json::to_string(&meta.authors)?;
+        sqlx::query(
+            r#"
+            UPDATE files 
+            SET status = ?1, 
+                title = ?2, 
+                authors = ?3, 
+                summary = ?4, 
+                updated_at = ?5 
+            WHERE dropbox_id = ?6
+            "#,
+        )
+        .bind(status)
+        .bind(meta.title)
+        .bind(authors_json)
+        .bind(meta.summary.0)
+        .bind(Utc::now())
+        .bind(&id.0)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     pub async fn upsert_file(
