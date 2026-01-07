@@ -85,6 +85,30 @@ pub enum JobResult {
         error: String,
     },
 }
+impl JobResult {
+    /// Create a successful job result
+    pub fn success(
+        id: DropboxId,
+        file_name: Option<String>,
+        meta: ArticleMetadata,
+        target_paths: Vec<RemotePath>,
+    ) -> Self {
+        Self::Success {
+            id,
+            file_name,
+            meta,
+            target_paths,
+        }
+    }
+    /// Create a failed job result
+    pub fn failure(id: DropboxId, file_name: Option<String>, error: anyhow::Error) -> Self {
+        Self::Failure {
+            id,
+            file_name,
+            error: format!("{:#}", error),
+        }
+    }
+}
 
 /// A file categorization rule
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,7 +1,7 @@
 use crate::clients::{DropboxClient, LlmClient};
 use crate::models::{FileStatus, Job, JobResult, RemotePath, Rules, WorkDirectory};
 use crate::storage::Storage;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::*;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::fs;
@@ -166,11 +166,7 @@ async fn process_file(
     let content = match dropbox.download_file(&job.id).await {
         Ok(c) => c,
         Err(e) => {
-            return JobResult::Failure {
-                id: job.id.clone(),
-                file_name: job.file_name,
-                error: e.to_string(),
-            };
+            return JobResult::failure(job.id.clone(), job.file_name, e);
         }
     };
 
@@ -182,12 +178,10 @@ async fn process_file(
     );
     let sanitized_id = job.id.0.replace([':', '/', '\\', ' '], "_");
     let local_path = work_dir.0.join("raw").join(format!("{}.pdf", sanitized_id));
-    if let Err(e) = fs::write(&local_path, &content) {
-        return JobResult::Failure {
-            id: job.id,
-            file_name: job.file_name,
-            error: format!("Failed to save local copy: {}", e),
-        };
+    if let Err(e) = fs::write(&local_path, &content)
+        .with_context(|| format!("Failed to save local copy to: {}", &local_path.to_string_lossy()))
+    {
+        return JobResult::failure(job.id, job.file_name, e);
     }
 
     // 3. Extract Text (lopdf)
@@ -199,11 +193,7 @@ async fn process_file(
     let text = match extract_text(&content) {
         Ok(t) => t,
         Err(e) => {
-            return JobResult::Failure {
-                id: job.id,
-                file_name: job.file_name,
-                error: e.to_string(),
-            };
+            return JobResult::failure(job.id.clone(), job.file_name, e);
         }
     };
 
@@ -217,11 +207,7 @@ async fn process_file(
         Ok(r) => r,
         Err(e) => {
             tracing::warn!("LLM query failed: {}", e);
-            return JobResult::Failure {
-                id: job.id,
-                file_name: job.file_name,
-                error: e.to_string(),
-            };
+            return JobResult::failure(job.id.clone(), job.file_name, e);
         }
     };
 
@@ -242,11 +228,7 @@ async fn process_file(
     for target in &targets {
         if let Err(e) = dropbox.upload_file(&target, content.clone()).await {
             tracing::warn!("Failed to upload file {} to Dropbox: {:?}", &target.0, e);
-            return JobResult::Failure {
-                id: job.id,
-                file_name: job.file_name,
-                error: e.to_string(),
-            };
+            return JobResult::failure(job.id.clone(), job.file_name, e);
         }
         let sidecar_path = RemotePath(format!("{}.md", &target.0));
         let sidecar_content = format!(
@@ -261,20 +243,11 @@ async fn process_file(
             .await
         {
             tracing::warn!("Failed to upload file {} to Dropbox: {:?}", target.0, e);
-            return JobResult::Failure {
-                id: job.id,
-                file_name: job.file_name,
-                error: e.to_string(),
-            };
+            return JobResult::failure(job.id.clone(), job.file_name, e);
         }
     }
 
-    JobResult::Success {
-        id: job.id,
-        file_name: job.file_name,
-        meta,
-        target_paths: targets,
-    }
+    JobResult::success(job.id, job.file_name, meta, targets)
 }
 
 fn extract_text(content: &[u8]) -> Result<String> {
