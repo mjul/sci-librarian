@@ -12,7 +12,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::info;
-use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Parser)]
 #[command(name = "sci-librarian")]
@@ -155,6 +155,18 @@ fn get_rules() -> Rules {
                 "Programming language theory, parsers, compilers, partial evaluation, type systems etc.",
             ),
             path: RemotePath::from("/sorted/programming-languages"),
+        },
+        Rule {
+            name: String::from("DSLs"),
+            description: String::from("Domain specific languages and their implementation."),
+            path: RemotePath::from("/sorted/domain-specific-languages"),
+        },
+        Rule {
+            name: String::from("LegalTech"),
+            description: String::from(
+                "Legal technology in various forms: drafting, management, review, reporting and auditing; legal research; compliance; law practice management systems and more.",
+            ),
+            path: RemotePath::from("/sorted/legal-tech"),
         },
     ])
 }
