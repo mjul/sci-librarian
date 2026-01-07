@@ -21,6 +21,9 @@ pub trait DropboxClient: Send + Sync {
     async fn list_folder(&self, path: &str) -> Result<Vec<DropboxEntry>>;
     async fn download_file(&self, id: &DropboxId) -> Result<Vec<u8>>;
     async fn upload_file(&self, path: &RemotePath, content: Vec<u8>) -> Result<()>;
+    async fn folder_exists(&self, path: &str) -> Result<bool>;
+    async fn create_folder(&self, path: &str) -> Result<()>;
+    async fn create_folder_if_not_exists(&self, path: &str) -> Result<()>;
 }
 
 #[async_trait]
@@ -222,6 +225,82 @@ impl DropboxClient for DropboxHttpClient {
 
         Ok(())
     }
+
+    async fn folder_exists(&self, path: &str) -> Result<bool> {
+        let url = "https://api.dropboxapi.com/2/files/get_metadata";
+        let body = serde_json::json!({
+            "path": path,
+            "include_media_info": false,
+            "include_deleted": false,
+            "include_has_explicit_shared_members": false
+        });
+
+        let body_bytes = serde_json::to_vec(&body)?;
+        let res_raw = self
+            .client
+            .post(url)
+            .bearer_auth(&self.token)
+            .header("Content-Type", "application/json")
+            .body(body_bytes)
+            .send()
+            .await?;
+
+        if res_raw.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(false);
+        }
+
+        if !res_raw.status().is_success() {
+            let status = res_raw.status();
+            let error_text = res_raw.text().await.unwrap_or_default();
+            // Dropbox returns a 409 Conflict for "path not found" in some cases when using get_metadata
+            if error_text.contains("path") && error_text.contains("not_found") {
+                return Ok(false);
+            }
+            return Err(anyhow::anyhow!(
+                "Dropbox API error ({}): {}",
+                status,
+                error_text
+            ));
+        }
+
+        let res: serde_json::Value = res_raw.json().await?;
+        Ok(res[".tag"] == "folder")
+    }
+
+    async fn create_folder(&self, path: &str) -> Result<()> {
+        let url = "https://api.dropboxapi.com/2/files/create_folder_v2";
+        let body = serde_json::json!({
+            "path": path,
+            "autorename": false
+        });
+
+        let body_bytes = serde_json::to_vec(&body)?;
+        self.dropbox_post_request(url, Some(body_bytes), None, Some("application/json"))
+            .await?;
+
+        Ok(())
+    }
+
+    async fn create_folder_if_not_exists(&self, path: &str) -> Result<()> {
+        if path.is_empty() || path == "/" {
+            return Ok(());
+        }
+
+        let components: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        let mut current_path = String::new();
+
+        for component in components {
+            current_path.push('/');
+            current_path.push_str(component);
+
+            if !self.folder_exists(&current_path).await? {
+                tracing::info!("Creating directory: {}", current_path);
+                self.create_folder(&current_path).await?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 pub struct MistralHttpClient {
@@ -356,19 +435,20 @@ impl LlmClient for MistralHttpClient {
 
 pub struct FakeDropboxClient {
     pub files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
-    pub entries: Vec<DropboxEntry>,
+    pub entries: Arc<Mutex<Vec<DropboxEntry>>>,
 }
 
 impl FakeDropboxClient {
     pub fn new() -> Self {
         Self {
             files: Arc::new(Mutex::new(HashMap::new())),
-            entries: Vec::new(),
+            entries: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     pub async fn add_entry(&mut self, entry: DropboxEntry, content: Vec<u8>) {
-        self.entries.push(entry.clone());
+        let mut entries = self.entries.lock().await;
+        entries.push(entry.clone());
         let mut files = self.files.lock().await;
         files.insert(entry.id.0.clone(), content);
     }
@@ -377,7 +457,8 @@ impl FakeDropboxClient {
 #[async_trait]
 impl DropboxClient for FakeDropboxClient {
     async fn list_folder(&self, _path: &str) -> Result<Vec<DropboxEntry>> {
-        Ok(self.entries.clone())
+        let entries = self.entries.lock().await;
+        Ok(entries.clone())
     }
 
     async fn download_file(&self, id: &DropboxId) -> Result<Vec<u8>> {
@@ -391,6 +472,38 @@ impl DropboxClient for FakeDropboxClient {
     async fn upload_file(&self, path: &RemotePath, content: Vec<u8>) -> Result<()> {
         let mut files = self.files.lock().await;
         files.insert(path.0.clone(), content);
+        Ok(())
+    }
+
+    async fn folder_exists(&self, path: &str) -> Result<bool> {
+        let entries = self.entries.lock().await;
+        Ok(entries.iter().any(|e| e.path.0 == path))
+    }
+
+    async fn create_folder(&self, path: &str) -> Result<()> {
+        let mut entries = self.entries.lock().await;
+        let name = path.split('/').last().unwrap_or_default().to_string();
+        entries.push(DropboxEntry {
+            id: DropboxId(format!("id:{}", path)),
+            name,
+            path: RemotePath(path.to_string()),
+            content_hash: FileHash(String::new()),
+        });
+        Ok(())
+    }
+
+    async fn create_folder_if_not_exists(&self, path: &str) -> Result<()> {
+        let components: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        let mut current_path = String::new();
+
+        for component in components {
+            current_path.push('/');
+            current_path.push_str(component);
+
+            if !self.folder_exists(&current_path).await? {
+                self.create_folder(&current_path).await?;
+            }
+        }
         Ok(())
     }
 }
@@ -437,5 +550,25 @@ impl LlmClient for FakeMistralClient {
             },
             vec![],
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_fake_dropbox_client_create_folder_if_not_exists() {
+        let client = FakeDropboxClient::new();
+        let path = "/a/b/c";
+
+        client.create_folder_if_not_exists(path).await.unwrap();
+
+        assert!(client.folder_exists("/a").await.unwrap());
+        assert!(client.folder_exists("/a/b").await.unwrap());
+        assert!(client.folder_exists("/a/b/c").await.unwrap());
+
+        let entries = client.list_folder("").await.unwrap();
+        assert_eq!(entries.len(), 3);
     }
 }
