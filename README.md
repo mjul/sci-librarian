@@ -23,9 +23,9 @@ publish it). If you name it `Sci-Librarian` it will fit the defaults. Create it 
 its permissions are limited.
 
 Give it these permissions:
-    - `files.metadata.read`  needed to list files
-    - `files.content.read`   needed to download files
-    - `files.content.write`  needed to upload files to target folders
+- `files.metadata.read`  needed to list files
+- `files.content.read`   needed to download files
+- `files.content.write`  needed to upload files to target folders
 
 After creating the app and giving it permssions go to the app `Settings` page under OAuth 2 and generate a new access
 token. This will be valid for a few hours allowing you to run the application. If you change permissions, generate a
@@ -47,9 +47,17 @@ variable:
 $env:MISTRAL_API_KEY="secret-key"
 ``` 
 
-### Test the Connection
+### Initialize the Dropbox Folder
 
-Test the connection:
+Run `init` to set up the target folder structure in Dropbox:
+
+```powershell
+cargo run -- init
+```
+
+### Sync the Inbox
+
+Run `sync` to download new files information from Dropbox:
 
 ```powershell
 cargo run -- sync 
